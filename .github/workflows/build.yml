@@ -5,11 +5,11 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch:  # Permite ejecutar manualmente
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # CAMBIADO a 20.04 (más estable)
     
     steps:
     - uses: actions/checkout@v4
@@ -17,7 +17,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9'
+        python-version: '3.8'  # CAMBIADO a 3.8 (más compatible)
     
     - name: Install system dependencies
       run: |
@@ -40,12 +40,20 @@ jobs:
           libgstreamer1.0-0 \
           gstreamer1.0-plugins-base \
           gstreamer1.0-plugins-good \
-          libffi-dev
+          libffi-dev \
+          autoconf \
+          automake \
+          libtool  # AÑADIDO
     
     - name: Install Python packages
       run: |
         pip install --upgrade pip
         pip install buildozer cython==0.29.19
+    
+    - name: Debug - List files
+      run: |
+        echo "Contenido del directorio:"
+        ls -la
     
     - name: Configure and build APK
       run: |
@@ -57,14 +65,12 @@ jobs:
         # Inicializar buildozer
         buildozer init
         
-        # Configurar buildozer.spec
-        sed -i 's/title = My Application/title = Calculadora Matematica/g' buildozer.spec
+        # Configurar buildozer.spec - VERSIÓN SIMPLIFICADA
+        sed -i 's/title = My Application/title = Calculadora Math/g' buildozer.spec
         sed -i 's/package.name = myapp/package.name = calculadoramath/g' buildozer.spec
         sed -i 's/package.domain = org.test/package.domain = com.math.app/g' buildozer.spec
-        sed -i 's/requirements = python3,kivy/requirements = python3,kivy,pillow/g' buildozer.spec
-        sed -i 's/source.include_exts = py/source.include_exts = py,txt/g' buildozer.spec
+        sed -i 's/requirements = python3,kivy/requirements = python3,kivy/g' buildozer.spec  # QUITADO pillow
         sed -i 's/# android.accept_sdk_license = False/android.accept_sdk_license = True/g' buildozer.spec
-        sed -i 's/# orientation = landscape/orientation = portrait/g' buildozer.spec
         
         # Compilar
         buildozer -v android debug
@@ -74,3 +80,4 @@ jobs:
       with:
         name: Calculadora-APK
         path: ./bin/*.apk
+      if: success()  # Solo si tuvo éxito
