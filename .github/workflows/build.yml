@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04  # CAMBIADO a 20.04 (más estable)
+    runs-on: ubuntu-latest  # CAMBIADO de 20.04 a latest
     
     steps:
     - uses: actions/checkout@v4
@@ -17,7 +17,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.8'  # CAMBIADO a 3.8 (más compatible)
+        python-version: '3.8'
     
     - name: Install system dependencies
       run: |
@@ -43,7 +43,7 @@ jobs:
           libffi-dev \
           autoconf \
           automake \
-          libtool  # AÑADIDO
+          libtool
     
     - name: Install Python packages
       run: |
@@ -51,28 +51,22 @@ jobs:
         pip install buildozer cython==0.29.19
     
     - name: Debug - List files
-      run: |
-        echo "Contenido del directorio:"
-        ls -la
+      run: ls -la
     
     - name: Configure and build APK
       run: |
-        # Renombrar archivo si es necesario
         if [ -f "calc_kivy_precalculo.py" ]; then
           mv calc_kivy_precalculo.py main.py
         fi
         
-        # Inicializar buildozer
         buildozer init
         
-        # Configurar buildozer.spec - VERSIÓN SIMPLIFICADA
         sed -i 's/title = My Application/title = Calculadora Math/g' buildozer.spec
         sed -i 's/package.name = myapp/package.name = calculadoramath/g' buildozer.spec
         sed -i 's/package.domain = org.test/package.domain = com.math.app/g' buildozer.spec
-        sed -i 's/requirements = python3,kivy/requirements = python3,kivy/g' buildozer.spec  # QUITADO pillow
+        sed -i 's/requirements = python3,kivy/requirements = python3,kivy/g' buildozer.spec
         sed -i 's/# android.accept_sdk_license = False/android.accept_sdk_license = True/g' buildozer.spec
         
-        # Compilar
         buildozer -v android debug
     
     - name: Upload APK
@@ -80,4 +74,4 @@ jobs:
       with:
         name: Calculadora-APK
         path: ./bin/*.apk
-      if: success()  # Solo si tuvo éxito
+      if: success()
