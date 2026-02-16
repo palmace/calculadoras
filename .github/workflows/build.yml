@@ -3,13 +3,11 @@ name: Build APK Calculadora
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Versión más estable
     
     steps:
     - uses: actions/checkout@v4
@@ -19,15 +17,16 @@ jobs:
       with:
         python-version: '3.8'
     
-    - name: Install system dependencies
+    - name: Install dependencies
       run: |
         sudo apt update
         sudo apt install -y \
-          python3-pip \
-          build-essential \
           git \
+          wget \
+          unzip \
+          python3-pip \
           python3-dev \
-          ffmpeg \
+          build-essential \
           libsdl2-dev \
           libsdl2-image-dev \
           libsdl2-mixer-dev \
@@ -39,65 +38,55 @@ jobs:
           zlib1g-dev \
           libgstreamer1.0-0 \
           gstreamer1.0-plugins-base \
-          gstreamer1.0-plugins-good \
           libffi-dev \
           autoconf \
           automake \
           libtool \
-          pkg-config \
-          cmake
+          pkg-config
+        
+        pip install --upgrade pip
+        pip install buildozer cython
     
-    - name: Install Python packages
+    - name: Prepare files
       run: |
-        pip install --upgrade pip setuptools wheel
-        pip install cython==0.29.19
-        pip install buildozer
-    
-    - name: Debug - List files
-      run: |
-        echo "Contenido del directorio:"
-        ls -la
-    
-    - name: Configure and build APK
-      run: |
-        # Renombrar archivo si es necesario
+        # Renombrar archivo principal
         if [ -f "calc_kivy_precalculo.py" ]; then
-          mv calc_kivy_precalculo.py main.py
+          cp calc_kivy_precalculo.py main.py
         fi
         
-        # Inicializar buildozer
-        buildozer init
-        
-        # CONFIGURACIÓN OPTIMIZADA
-        sed -i 's/title = My Application/title = Calculadora Math/g' buildozer.spec
-        sed -i 's/package.name = myapp/package.name = calculadoramath/g' buildozer.spec
-        sed -i 's/package.domain = org.test/package.domain = com.math.app/g' buildozer.spec
-        
-        # IMPORTANTE: Solo python3,kivy (sin pillow, sin extras)
-        sed -i 's/requirements = python3,kivy/requirements = python3,kivy/g' buildozer.spec
-        
-        # Aceptar licencias
-        sed -i 's/# android.accept_sdk_license = False/android.accept_sdk_license = True/g' buildozer.spec
-        
-        # ORIENTACIÓN
-        sed -i 's/# orientation = landscape/orientation = portrait/g' buildozer.spec
-        
-        # INCLUIR ARCHIVOS
-        sed -i 's/source.include_exts = py/source.include_exts = py,txt/g' buildozer.spec
-        
-        # VERSIÓN DE ANDROID
-        echo "android.api = 30" >> buildozer.spec
-        echo "android.minapi = 21" >> buildozer.spec
-        echo "android.ndk = 23b" >> buildozer.spec
-        
-        # Mostrar configuración final
-        echo "===== CONFIGURACIÓN ====="
-        grep -E "title|package|requirements|android" buildozer.spec
-        
-        # COMPILAR
-        echo "===== INICIANDO COMPILACIÓN ====="
-        buildozer android debug
-        
+        # Crear buildozer.spec manualmente
+        cat > buildozer.spec << 'EOF'
+[app]
+title = Calculadora Math
+package.name = calculadoramath
+package.domain = com.math.app
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas,txt
+version = 0.1
+requirements = python3,kivy
+orientation = portrait
+osx.python_version = 3
+osx.kivy_version = 2.1.0
+fullscreen = 0
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+
+[android]
+android.accept_sdk_license = True
+android.ndk = 25b
+android.sdk = 24
+android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
+android.sdk_path = /usr/local/lib/android/sdk
+android.ant_path = /usr/share/ant
+android.gradle_dependencies = 'org.libsodium:libsodium:2.8.1'
+EOF
+    
+    - name: Build APK
+      run: |
+        buildozer -v android debug
+    
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
