@@ -56,11 +56,40 @@ jobs:
         echo "📁 Verificación:"
         ls -la main.py
     
+    # 🔥 NUEVO: Crear parche para solucionar el error de pyjnius 🔥
+    - name: Crear parche para pyjnius (fix long type)
+      run: |
+        echo "📁 Creando estructura de carpetas para receta local..."
+        mkdir -p .p4a-recipes/pyjnius/patches
+        
+        echo "📝 Creando archivo de parche..."
+        cat > .p4a-recipes/pyjnius/patches/fix-long.patch << 'EOF'
+--- a/jnius/jnius_utils.pxi
++++ b/jnius/jnius_utils.pxi
+@@ -319,8 +319,7 @@
+                 score += 10
+                 continue
+ 
+-        if r == 'S' or r == 'I':
+-            if isinstance(arg, int) or (
+-                    (isinstance(arg, long) and arg < 2147483648)):
++        if (r == 'S' or r == 'I') and isinstance(arg, int):
+                 score += 10
+                 continue
+EOF
+        echo "✅ Parche para pyjnius creado correctamente"
+        echo "📁 Contenido de .p4a-recipes:"
+        ls -la .p4a-recipes/pyjnius/patches/
+    
     - name: Initialize Buildozer
       run: |
         buildozer init
         
-        # Configurar buildozer.spec
+        # 🔥 NUEVO: Configurar ruta de recetas locales 🔥
+        echo "⚙️ Configurando ruta de recetas locales en buildozer.spec..."
+        sed -i 's/^#p4a\.local_recipes = .*/p4a.local_recipes = .\/.p4a-recipes/' buildozer.spec
+        
+        # Configurar buildozer.spec (tus configuraciones existentes)
         sed -i 's/title = My Application/title = Calculadora Matematica/g' buildozer.spec
         sed -i 's/package.name = myapp/package.name = calculadoramath/g' buildozer.spec
         sed -i 's/package.domain = org.test/package.domain = com.math.app/g' buildozer.spec
@@ -69,6 +98,8 @@ jobs:
         sed -i 's/# android.ndk = 23b/android.ndk = 25b/g' buildozer.spec
         sed -i 's/# android.sdk = 24/android.sdk = 30/g' buildozer.spec
         
+        echo "✅ Verificando configuración final:"
+        grep -E "title|package|requirements|android.accept|android.ndk|android.sdk|p4a.local_recipes" buildozer.spec
         echo "✅ buildozer.spec configurado"
     
     - name: Build APK
