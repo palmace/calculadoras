@@ -1,0 +1,92 @@
+name: Generar APK Kivy
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            python3-pip \
+            build-essential \
+            git \
+            python3-dev \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            libgstreamer1.0-0 \
+            gstreamer1.0-plugins-base \
+            libffi-dev \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            openjdk-17-jdk \
+            unzip
+      
+      - name: Install Python packages
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython
+          pip install kivy
+      
+      - name: Prepare files
+        run: |
+          # Crear main.py si no existe
+          if [ ! -f "main.py" ]; then
+            if [ -f "calc_kivy_precalculo.py" ]; then
+              cp calc_kivy_precalculo.py main.py
+              echo "✅ Usando calc_kivy_precalculo.py como main.py"
+            else
+              echo "❌ No se encuentra el archivo Python"
+              exit 1
+            fi
+          fi
+          
+          # Inicializar buildozer
+          buildozer init
+          
+          # Configurar buildozer.spec
+          sed -i 's/title = My Application/title = Calculadora Matematica/g' buildozer.spec
+          sed -i 's/package.name = myapp/package.name = calculadoramath/g' buildozer.spec
+          sed -i 's/package.domain = org.test/package.domain = com.math.app/g' buildozer.spec
+          sed -i 's/requirements = python3,kivy/requirements = python3,kivy/g' buildozer.spec
+          sed -i 's/# android.accept_sdk_license = False/android.accept_sdk_license = True/g' buildozer.spec
+          sed -i 's/# android.ndk = 23b/android.ndk = 25b/g' buildozer.spec
+          sed -i 's/# android.sdk = 24/android.sdk = 30/g' buildozer.spec
+          
+          echo "✅ Configuración lista"
+      
+      - name: Build APK
+        run: |
+          echo "🔄 Compilando APK (20-30 minutos)..."
+          buildozer -v android debug
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Calculadora-APK
+          path: ./bin/*.apk
+        if: success()
