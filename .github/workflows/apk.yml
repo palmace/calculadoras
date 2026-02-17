@@ -7,16 +7,16 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Set up Python 3.11
+    
+    - name: Set up Python 3.8
       uses: actions/setup-python@v5
       with:
-        python-version: 3.11
-
+        python-version: 3.8
+    
     - name: Install system dependencies
       run: |
         sudo apt update
@@ -24,7 +24,7 @@ jobs:
           git \
           zip \
           unzip \
-          openjdk-17-jdk \
+          openjdk-11-jdk \
           python3-pip \
           autoconf \
           libtool \
@@ -32,32 +32,46 @@ jobs:
           zlib1g-dev \
           libncurses5-dev \
           libncursesw5-dev \
-          libtinfo5 \
           cmake \
           libffi-dev \
           libssl-dev \
-          wget
-
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-
-    - name: Install Cython and buildozer
+          wget \
+          curl
+    
+    - name: Install Android SDK
+      run: |
+        # Crear directorios
+        mkdir -p ~/.buildozer/android/platform
+        cd ~/.buildozer/android/platform
+        
+        # Descargar Android SDK command line tools
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip commandlinetools-linux-9477386_latest.zip
+        mkdir -p android-sdk/cmdline-tools
+        mv cmdline-tools android-sdk/cmdline-tools/latest
+        
+        # Configurar variables de entorno
+        echo "export ANDROID_HOME=~/.buildozer/android/platform/android-sdk" >> ~/.bashrc
+        echo "export PATH=\$PATH:\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID_HOME/platform-tools" >> ~/.bashrc
+        source ~/.bashrc
+        
+        # Aceptar licencias
+        yes | ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+        
+        # Instalar plataformas y build-tools
+        ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3"
+    
+    - name: Install buildozer
       run: |
         pip install --upgrade pip
-        pip install cython==0.29.36
-        pip install buildozer
-
+        pip install buildozer cython==0.29.36
+    
     - name: Build with buildozer
       run: |
-        # No ejecutar buildozer init si ya existe buildozer.spec
-        if [ ! -f buildozer.spec ]; then
-          buildozer init
-        fi
+        # Verificar que el SDK está instalado
+        ls -la ~/.buildozer/android/platform/
         buildozer -v android debug
-
+    
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
