@@ -1,4 +1,3 @@
-
 name: Build APK Calculadora
 
 on:
@@ -50,22 +49,22 @@ jobs:
         # Crear estructura de parche
         mkdir -p .p4a-recipes/pyjnius/patches
         
-        # Crear el archivo de parche
-        cat > .p4a-recipes/pyjnius/patches/fix-long.patch << 'EOF'
---- a/jnius/jnius_utils.pxi
-+++ b/jnius/jnius_utils.pxi
-@@ -319,8 +319,7 @@
-                 score += 10
-                 continue
- 
--        if r == 'S' or r == 'I':
--            if isinstance(arg, int) or (
--                    (isinstance(arg, long) and arg < 2147483648)):
-+        if (r == 'S' or r == 'I') and isinstance(arg, int):
-                 score += 10
-                 continue
-EOF
+        # Crear el archivo de parche (versión simplificada)
+        echo "--- a/jnius/jnius_utils.pxi" > .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "+++ b/jnius/jnius_utils.pxi" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "@@ -319,8 +319,7 @@" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "                 score += 10" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "                 continue" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "-        if r == 'S' or r == 'I':" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "-            if isinstance(arg, int) or (" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "-                    (isinstance(arg, long) and arg < 2147483648)):" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "+        if (r == 'S' or r == 'I') and isinstance(arg, int):" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "                 score += 10" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        echo "                 continue" >> .p4a-recipes/pyjnius/patches/fix-long.patch
+        
         echo "✅ Parche creado"
+        cat .p4a-recipes/pyjnius/patches/fix-long.patch
     
     - name: Configure Buildozer
       run: |
