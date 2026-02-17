@@ -2,95 +2,71 @@ name: Build APK Calculadora
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
       uses: actions/setup-python@v5
       with:
-        python-version: '3.8'
-    
+        python-version: 3.11
+
     - name: Install system dependencies
       run: |
         sudo apt update
         sudo apt install -y \
-          git wget unzip \
-          python3-pip python3-dev build-essential \
-          libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-          libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev \
-          zlib1g-dev libgstreamer1.0-0 gstreamer1.0-plugins-base \
-          libffi-dev autoconf automake libtool pkg-config openjdk-17-jdk
-    
-    - name: Install Python dependencies
+          git \
+          zip \
+          unzip \
+          openjdk-17-jdk \
+          python3-pip \
+          autoconf \
+          libtool \
+          pkg-config \
+          zlib1g-dev \
+          libncurses5-dev \
+          libncursesw5-dev \
+          libtinfo5 \
+          cmake \
+          libffi-dev \
+          libssl-dev \
+          wget
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Install Cython and buildozer
       run: |
         pip install --upgrade pip
-        pip install buildozer cython kivy
-    
-    - name: Prepare main.py
+        pip install cython==0.29.36
+        pip install buildozer
+
+    - name: Create requirements.txt
       run: |
-        if [ -f "calc_kivy_precalculo_beta.py" ]; then
-          echo "✅ Encontrado: calc_kivy_precalculo_beta.py"
-          cp calc_kivy_precalculo_beta.py main.py
-          ls -la main.py
-        else
-          echo "❌ Error: No se encuentra calc_kivy_precalculo_beta.py"
-          exit 1
-        fi
-    
-    - name: Create pyjnius patch
+        echo "kivy==2.3.0" > requirements.txt
+        echo "pyjnius==1.6.0" >> requirements.txt
+
+    - name: Build with buildozer
       run: |
-        # Crear estructura de parche
-        mkdir -p .p4a-recipes/pyjnius/patches
-        
-        # Crear el archivo de parche (versión simplificada)
-        echo "--- a/jnius/jnius_utils.pxi" > .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "+++ b/jnius/jnius_utils.pxi" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "@@ -319,8 +319,7 @@" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "                 score += 10" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "                 continue" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "-        if r == 'S' or r == 'I':" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "-            if isinstance(arg, int) or (" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "-                    (isinstance(arg, long) and arg < 2147483648)):" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "+        if (r == 'S' or r == 'I') and isinstance(arg, int):" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "                 score += 10" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        echo "                 continue" >> .p4a-recipes/pyjnius/patches/fix-long.patch
-        
-        echo "✅ Parche creado"
-        cat .p4a-recipes/pyjnius/patches/fix-long.patch
-    
-    - name: Configure Buildozer
-      run: |
-        # Inicializar buildozer
         buildozer init
-        
-        # Configurar buildozer.spec
-        sed -i 's/title = My Application/title = Calculadora Matematica/g' buildozer.spec
-        sed -i 's/package.name = myapp/package.name = calculadoramath/g' buildozer.spec
-        sed -i 's/package.domain = org.test/package.domain = com.math.app/g' buildozer.spec
-        sed -i 's/# android.accept_sdk_license = False/android.accept_sdk_license = True/g' buildozer.spec
-        sed -i 's/# android.ndk = 23b/android.ndk = 25b/g' buildozer.spec
-        sed -i 's/# android.sdk = 24/android.sdk = 30/g' buildozer.spec
-        sed -i 's/^#p4a.local_recipes = .*/p4a.local_recipes = .\/.p4a-recipes/g' buildozer.spec
-        
-        echo "✅ buildozer.spec configurado"
-        grep "p4a.local_recipes" buildozer.spec
-    
-    - name: Build APK
-      run: |
-        echo "🚀 Compilando APK (esto puede tomar 20-30 minutos)..."
+        # Modificar buildozer.spec para usar Python 3.11
+        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,pyjnius==1.6.0/' buildozer.spec
+        sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec
+        sed -i 's/^android.sdk = .*/android.sdk = 30/' buildozer.spec
+        sed -i 's/^#android.accept_sdk_license = .*/android.accept_sdk_license = True/' buildozer.spec
         buildozer -v android debug
-    
+
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Calculadora-APK
-        path: ./bin/*.apk
-      if: success()
+        name: calculadora-apk
+        path: bin/*.apk
