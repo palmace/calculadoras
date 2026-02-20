@@ -18,10 +18,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Set up Python 3.8
+    # Usamos Python 3.10 o 3.11, ya que 3.8 es bastante antiguo para las dependencias actuales de Kivy/Buildozer
+    - name: Set up Python 3.11
       uses: actions/setup-python@v5
       with:
-        python-version: 3.8
+        python-version: "3.11"
     
     - name: Cache Android SDK and Buildozer
       uses: actions/cache@v4
@@ -39,120 +40,52 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y \
-          git \
-          zip \
-          unzip \
-          openjdk-17-jdk \
-          python3-pip \
-          python3-dev \
-          python3-venv \
-          autoconf \
-          libtool \
-          pkg-config \
-          zlib1g-dev \
-          libncurses-dev \
-          libncursesw5-dev \
-          cmake \
-          libffi-dev \
-          libssl-dev \
-          wget \
-          curl \
-          software-properties-common \
-          build-essential
-    
-    - name: Install Android SDK
-      run: |
-        if [ ! -d ~/.buildozer/android/platform/android-sdk ]; then
-          echo "📦 Instalando Android SDK..."
-          mkdir -p ~/.buildozer/android/platform
-          cd ~/.buildozer/android/platform
-          
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q commandlinetools-linux-11076708_latest.zip
-          rm commandlinetools-linux-11076708_latest.zip
-          
-          mkdir -p android-sdk/cmdline-tools
-          mv cmdline-tools android-sdk/cmdline-tools/latest
-          
-          export ANDROID_HOME=~/.buildozer/android/platform/android-sdk
-          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
-          
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" \
-            "platforms;android-33" \
-            "build-tools;33.0.2"
-        else
-          echo "✅ Android SDK ya está cacheado"
-        fi
-    
-    - name: Install buildozer and dependencies
+          git zip unzip openjdk-17-jdk python3-pip python3-dev python3-venv \
+          autoconf libtool pkg-config zlib1g-dev libncurses-dev libncursesw5-dev \
+          cmake libffi-dev libssl-dev wget curl software-properties-common build-essential
+
+    - name: Install buildozer and cython
       run: |
         python3 -m pip install --upgrade pip
-        python3 -m pip install --user buildozer cython==0.29.36
-        echo "✅ Versiones instaladas:"
-        python3 --version
-        pip3 --version
+        python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-    
+
     - name: Configure buildozer.spec
       run: |
         if [ ! -f buildozer.spec ]; then
           echo "📝 Creando buildozer.spec..."
-          ~/.local/bin/buildozer init
+          buildozer init
           
-          # Configurar para tu app
-          sed -i 's/title = My Application/title = Calculadora Educativa/' buildozer.spec
-          sed -i 's/package.name = myapp/package.name = calculadora/' buildozer.spec
-          sed -i 's/package.domain = org.test/package.domain = palmace.github.io/' buildozer.spec
-          sed -i 's/source.include_exts = py,png,jpg,kv,atlas/source.include_exts = py,png,jpg,kv/' buildozer.spec
-          sed -i 's/requirements = python3,kivy/requirements = python3,kivy==2.3.1,cython==0.29.36/' buildozer.spec
+          # Modificaciones seguras con sed
+          sed -i 's/^title = .*/title = Calculadora Educativa/' buildozer.spec
+          sed -i 's/^package.name = .*/package.name = calculadora/' buildozer.spec
+          sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
+          sed -i 's/^source.include_exts = .*/source.include_exts = py,png,jpg,kv/' buildozer.spec
+          sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
           
-          # Configuraciones adicionales - CON INDENTACIÓN CORRECTA
-          cat >> buildozer.spec << 'EOF'
-          
-# Android specific configuration
-android.accept_sdk_license = True
-android.sdk = 33
-android.ndk = 25b
-android.ndk_path = ~/.buildozer/android/platform/android-ndk-r25b
-android.ant_path = ~/.buildozer/android/platform/apache-ant-1.9.4
-android.gradle_dependencies = 'com.google.android.material:material:1.9.0'
-EOF
+          # Habilitar permisos y SDK
+          sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
+          sed -i 's/#android.api = 31/android.api = 33/' buildozer.spec
+          sed -i 's/#android.minapi = 21/android.minapi = 21/' buildozer.spec
         else
           echo "✅ buildozer.spec ya existe"
-          echo "📋 Contenido relevante:"
-          grep -E "title|package\.name|requirements|android\.sdk|android\.ndk" buildozer.spec || true
         fi
-    
+
     - name: Build APK
       run: |
-        echo "🏗️ Iniciando compilación del APK..."
-        echo "⏱️ Este proceso puede tomar 20-30 minutos..."
-        
-        echo "📁 Estructura de Android:"
-        ls -la ~/.buildozer/android/platform/ || true
-        
-        ~/.local/bin/buildozer -v android debug
+        echo "🏗️ Iniciando compilación..."
+        # El comando 'yes |' ayuda a aceptar licencias automáticamente si Buildozer pregunta
+        yes | buildozer -v android debug
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Calculadora-APK-${{ github.sha }}
-        path: ./bin/*.apk
+        name: Calculadora-APK
+        path: bin/*.apk
         retention-days: 30
-        if-no-files-found: warn
     
     - name: Display APK info
       if: success()
       run: |
-        if ls ./bin/*.apk 1> /dev/null 2>&1; then
-          echo "✅ APK generado exitosamente:"
-          ls -la ./bin/*.apk
-          echo "📏 Tamaño: $(du -h ./bin/*.apk | cut -f1)"
-        else
-          echo "❌ No se encontró APK en ./bin/"
-          echo "📁 Contenido de ./bin:"
-          ls -la ./bin/ || echo "Directorio ./bin no existe"
-        fi
+        echo "✅ Revisando resultados..."
+        ls -lh bin/ || echo "No se encontraron archivos en bin/"
