@@ -5,15 +5,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# Control de concurrencia - SOLO UNA EJECUCIÓN A LA VEZ
 concurrency:
   group: build-apk-${{ github.ref }}
-  cancel-in-progress: true  # Cancela ejecuciones anteriores si hay una nueva
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
-    # TIMEOUT: Evita trabajos colgados para siempre
+    runs-on: ubuntu-latest  # CAMBIO CLAVE: usar latest en lugar de 20.04
     timeout-minutes: 45
     
     steps:
@@ -25,20 +23,17 @@ jobs:
       with:
         python-version: 3.8
     
-    # CACHE MEJORADO: Más rutas y más opciones de restauración
-    - name: Cache Android SDK, Buildozer and PIP
+    - name: Cache Android SDK and Buildozer
       uses: actions/cache@v4
       with:
         path: |
           ~/.buildozer
           ~/.gradle
           ~/.cache/pip
-          ~/.local/share/buildozer
         key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-${{ github.run_id }}
         restore-keys: |
           ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
           ${{ runner.os }}-buildozer-
-          ${{ runner.os }}-
     
     - name: Install system dependencies
       run: |
@@ -47,7 +42,7 @@ jobs:
           git \
           zip \
           unzip \
-          openjdk-11-jdk \
+          openjdk-17-jdk \  # CAMBIO: Ubuntu 22.04+ usa Java 17 por defecto
           python3-pip \
           python3-dev \
           autoconf \
@@ -60,95 +55,59 @@ jobs:
           libffi-dev \
           libssl-dev \
           wget \
-          curl \
-          software-properties-common
+          curl
     
-    - name: Install Android SDK (optimizado)
+    - name: Install Android SDK
       run: |
         if [ ! -d ~/.buildozer/android/platform/android-sdk ]; then
-          echo "📦 Instalando Android SDK por primera vez..."
+          echo "📦 Instalando Android SDK..."
           mkdir -p ~/.buildozer/android/platform
           cd ~/.buildozer/android/platform
           
-          # Descargar Android SDK command line tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip
+          # Usar la última versión de command line tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
           mkdir -p android-sdk/cmdline-tools
           mv cmdline-tools android-sdk/cmdline-tools/latest
           
           # Aceptar licencias
           yes | ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
           
-          # Instalar componentes mínimos necesarios
+          # Instalar componentes
           ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
-            "platforms;android-31" \
-            "build-tools;30.0.3" \
-            --verbose
-          
-          echo "✅ Android SDK instalado correctamente"
+            "platforms;android-33" \  # Actualizado a API 33
+            "build-tools;33.0.2"      # Build tools actualizadas
         else
-          echo "✅ Android SDK ya está cacheado"
+          echo "✅ Android SDK cacheado"
         fi
     
-    - name: Install buildozer and dependencies
+    - name: Install buildozer
       run: |
         pip install --upgrade pip
-        pip install --user buildozer cython==0.29.36
-        
-        # Verificar instalación
-        echo "📋 Versiones instaladas:"
-        python --version
-        pip list | grep -E "buildozer|cython|kivy"
+        pip install buildozer cython==0.29.36
     
-    - name: Create/Configure buildozer.spec
+    - name: Configure buildozer.spec
       run: |
         if [ ! -f buildozer.spec ]; then
-          echo "📝 Creando buildozer.spec..."
           buildozer init
-          
-          # Configurar para tu app
           sed -i 's/title = My Application/title = Calculadora Educativa/' buildozer.spec
           sed -i 's/package.name = myapp/package.name = calculadora/' buildozer.spec
           sed -i 's/package.domain = org.test/package.domain = palmace.github.io/' buildozer.spec
-          sed -i 's/source.include_exts = py,png,jpg,kv,atlas/source.include_exts = py,png,jpg,kv/' buildozer.spec
-          sed -i 's/requirements = python3,kivy/requirements = python3,kivy==2.3.1,cython==0.29.36,pygments/' buildozer.spec
+          sed -i 's/requirements = python3,kivy/requirements = python3,kivy==2.3.1,cython==0.29.36/' buildozer.spec
           
-          # Optimizaciones para compilación más rápida
-          echo "" >> buildozer.spec
-          echo "# Optimizaciones" >> buildozer.spec
+          # Configurar para SDK/NDK actualizados
           echo "android.accept_sdk_license = True" >> buildozer.spec
+          echo "android.sdk = 33" >> buildozer.spec
           echo "android.ndk = 25b" >> buildozer.spec
-          echo "android.sdk = 31" >> buildozer.spec
-        else
-          echo "✅ buildozer.spec ya existe"
-          cat buildozer.spec | grep -E "title|package.name|requirements"
+          echo "android.ndk_path = ~/.buildozer/android/platform/android-ndk-r25b" >> buildozer.spec
         fi
     
-    - name: Build with buildozer
-      run: |
-        echo "🏗️ Iniciando compilación del APK..."
-        echo "Esto puede tomar 20-30 minutos..."
-        
-        # Mostrar información de debug
-        echo "📁 Estructura de directorios:"
-        ls -la ~/.buildozer/android/platform/ || true
-        
-        # Compilar
-        buildozer -v android debug
-        
-        echo "✅ Compilación completada"
+    - name: Build APK
+      run: buildozer -v android debug
     
-    - name: Upload APK artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Calculadora-APK-${{ github.sha }}
+        name: Calculadora-APK
         path: ./bin/*.apk
-        retention-days: 30
-        if-no-files-found: error
-    
-    - name: Display APK info
-      if: success()
-      run: |
-        echo "📱 APK generado:"
-        ls -la ./bin/*.apk || echo "No se encontró APK"
