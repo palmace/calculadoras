@@ -18,7 +18,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    # Usamos Python 3.10 o 3.11, ya que 3.8 es bastante antiguo para las dependencias actuales de Kivy/Buildozer
     - name: Set up Python 3.11
       uses: actions/setup-python@v5
       with:
@@ -47,6 +46,7 @@ jobs:
     - name: Install buildozer and cython
       run: |
         python3 -m pip install --upgrade pip
+        # Usamos Cython < 3.0 para evitar errores de compilación con Kivy
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
@@ -56,25 +56,32 @@ jobs:
           echo "📝 Creando buildozer.spec..."
           buildozer init
           
-          # Modificaciones seguras con sed
+          # Ajustes dinámicos con sed para evitar errores de sintaxis
           sed -i 's/^title = .*/title = Calculadora Educativa/' buildozer.spec
-          sed -i 's/^package.name = .*/package.name = calculadora/' buildozer.spec
+          sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
           sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
           sed -i 's/^source.include_exts = .*/source.include_exts = py,png,jpg,kv/' buildozer.spec
+          
+          # Requerimientos actualizados para Python 3.11
           sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
           
-          # Habilitar permisos y SDK
+          # Configuración de Android (dejando que Buildozer gestione rutas)
           sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
           sed -i 's/#android.api = 31/android.api = 33/' buildozer.spec
           sed -i 's/#android.minapi = 21/android.minapi = 21/' buildozer.spec
+          
+          # Limpieza de cualquier configuración residual que cause conflictos de rutas
+          sed -i '/android.ndk_path =/d' buildozer.spec
+          sed -i '/android.sdk_path =/d' buildozer.spec
         else
-          echo "✅ buildozer.spec ya existe"
+          echo "✅ buildozer.spec detectado, actualizando licencias..."
+          sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         fi
 
     - name: Build APK
       run: |
         echo "🏗️ Iniciando compilación..."
-        # El comando 'yes |' ayuda a aceptar licencias automáticamente si Buildozer pregunta
+        # El comando yes ayuda a aceptar licencias de Android SDK automáticamente
         yes | buildozer -v android debug
     
     - name: Upload APK
@@ -87,5 +94,5 @@ jobs:
     - name: Display APK info
       if: success()
       run: |
-        echo "✅ Revisando resultados..."
-        ls -lh bin/ || echo "No se encontraron archivos en bin/"
+        echo "✅ Compilación terminada con éxito."
+        ls -lh bin/ || echo "No se encontró el APK en la carpeta bin"
