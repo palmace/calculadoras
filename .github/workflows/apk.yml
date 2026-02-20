@@ -12,7 +12,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     
     steps:
     - name: Checkout code
@@ -22,18 +22,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-    
-    - name: Cache Android SDK and Buildozer
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.buildozer
-          ~/.gradle
-          ~/.cache/pip
-        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
-          ${{ runner.os }}-buildozer-
     
     - name: Install system dependencies
       run: |
@@ -46,53 +34,47 @@ jobs:
     - name: Install buildozer and cython
       run: |
         python3 -m pip install --upgrade pip
-        # Usamos Cython < 3.0 para evitar errores de compilación con Kivy
+        # Cython 0.29.33 es la más estable para evitar el error de compilación actual
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Configure buildozer.spec
       run: |
         if [ ! -f buildozer.spec ]; then
-          echo "📝 Creando buildozer.spec..."
           buildozer init
-          
-          # Ajustes dinámicos con sed para evitar errores de sintaxis
-          sed -i 's/^title = .*/title = Calculadora Educativa/' buildozer.spec
-          sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
-          sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
-          sed -i 's/^source.include_exts = .*/source.include_exts = py,png,jpg,kv/' buildozer.spec
-          
-          # Requerimientos actualizados para Python 3.11
-          sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
-          
-          # Configuración de Android (dejando que Buildozer gestione rutas)
-          sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
-          sed -i 's/#android.api = 31/android.api = 33/' buildozer.spec
-          sed -i 's/#android.minapi = 21/android.minapi = 21/' buildozer.spec
-          
-          # Limpieza de cualquier configuración residual que cause conflictos de rutas
-          sed -i '/android.ndk_path =/d' buildozer.spec
-          sed -i '/android.sdk_path =/d' buildozer.spec
-        else
-          echo "✅ buildozer.spec detectado, actualizando licencias..."
-          sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         fi
+        
+        # Forzamos la configuración correcta ignorando lo que haya en el archivo
+        sed -i 's/^title = .*/title = Calculadora Educativa/' buildozer.spec
+        sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
+        sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
+        sed -i 's/^source.include_exts = .*/source.include_exts = py,png,jpg,kv/' buildozer.spec
+        
+        # CAMBIO CRÍTICO: Usar Kivy 2.3.0 para evitar el error del log
+        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
+        
+        # Configuración de Android recomendada para GitHub Actions
+        sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
+        sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
+        sed -i 's/^android.minapi = .*/android.minapi = 21/' buildozer.spec
+        sed -i 's/#android.ndk = 25b/android.ndk = 25b/' buildozer.spec
+        
+        # Eliminar rutas manuales que causan el "Broken pipe"
+        sed -i '/android.ndk_path =/d' buildozer.spec
+        sed -i '/android.sdk_path =/d' buildozer.spec
 
     - name: Build APK
       run: |
-        echo "🏗️ Iniciando compilación..."
-        # El comando yes ayuda a aceptar licencias de Android SDK automáticamente
-        yes | buildozer -v android debug
+        # Limpiamos posibles residuos de compilaciones fallidas anteriores
+        rm -rf .buildozer/android/platform/build-*
+        
+        echo "🏗️ Iniciando compilación (esto puede tardar)..."
+        # [span_4](start_span)Usamos log_level = 2 para ver el error real si vuelve a fallar[span_4](end_span)
+        buildozer -v android debug
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: Calculadora-APK
         path: bin/*.apk
-        retention-days: 30
-    
-    - name: Display APK info
-      if: success()
-      run: |
-        echo "✅ Compilación terminada con éxito."
-        ls -lh bin/ || echo "No se encontró el APK en la carpeta bin"
+        if-no-files-found: error
