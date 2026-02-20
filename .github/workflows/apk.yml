@@ -37,40 +37,54 @@ jobs:
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+    - name: Pre-install Android Build Tools (Fix AIDL)
+      run: |
+        # Definir rutas para el SDK que Buildozer usará
+        export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
+        mkdir -p $ANDROID_HOME/cmdline-tools
+        
+        # Descargar herramientas de línea de comandos oficiales si no existen
+        cd $ANDROID_HOME/cmdline-tools
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip -q commandlinetools-linux-9477386_latest.zip
+        mv cmdline-tools latest
+        
+        # Aceptar licencias e instalar versión ESTABLE 34.0.0 (evita la 37-rc1)
+        yes | ./latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "build-tools;34.0.0" "platforms;android-33" "platform-tools"
+        
+        # Crear un link simbólico por si Buildozer busca en la ruta antigua
+        mkdir -p $ANDROID_HOME/build-tools
+        echo "✅ Build-tools 34.0.0 instalado manualmente."
+
     - name: Configure buildozer.spec
       run: |
         if [ ! -f buildozer.spec ]; then
           buildozer init
         fi
         
-        # Configuraciones de identidad de la app
+        # Configuración forzada para evitar versiones RC
         sed -i 's/^title = .*/title = Calculadora Educativa/' buildozer.spec
         sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
-        sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
-        
-        # Requerimientos estables
         sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
         
-        # SOLUCIÓN AL ERROR DE LICENCIAS Y AIDL:
-        # Forzamos una versión estable de Build Tools y API
+        # Forzar API y Build Tools específicas
         sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
-        sed -i 's/^android.minapi = .*/android.minapi = 21/' buildozer.spec
         
-        # Añadimos explícitamente la versión de build_tools para evitar la 37.0.0-rc1
-        if grep -q "android.build_tools_version =" buildozer.spec; then
-          sed -i 's/^android.build_tools_version = .*/android.build_tools_version = 33.0.2/' buildozer.spec
-        else
-          sed -i '/^android.api = /a android.build_tools_version = 33.0.2' buildozer.spec
-        fi
+        # Insertar la línea de build_tools justo después de la API
+        sed -i '/android.api = 33/a android.build_tools_version = 34.0.0' buildozer.spec
+        
+        # [span_2](start_span)[span_3](start_span)Eliminar cualquier configuración de NDK/SDK manual previa que cause conflicto[span_2](end_span)[span_3](end_span)
+        sed -i '/android.ndk_path =/d' buildozer.spec
+        sed -i '/android.sdk_path =/d' buildozer.spec
 
     - name: Build APK
       run: |
-        # [span_1](start_span)[span_2](start_span)Aceptar licencias manualmente antes de empezar para asegurar que AIDL se instale[span_1](end_span)[span_2](end_span)
-        mkdir -p ~/.android && touch ~/.android/repositories.cfg
+        # Forzar a Buildozer a usar el SDK que acabamos de preparar
+        export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
+        export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
         
-        echo "🏗️ Iniciando compilación..."
-        # El comando buildozer se encarga de descargar el SDK estable definido arriba
+        echo "🏗️ Iniciando compilación final..."
         buildozer -v android debug
     
     - name: Upload APK
@@ -78,4 +92,3 @@ jobs:
       with:
         name: Calculadora-APK
         path: bin/*.apk
-        if-no-files-found: error
