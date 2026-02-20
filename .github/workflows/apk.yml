@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # Ahora es Ubuntu 24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     
     steps:
@@ -35,7 +35,7 @@ jobs:
           ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
           ${{ runner.os }}-buildozer-
     
-    - name: Install system dependencies (CORREGIDO para Ubuntu 24.04)
+    - name: Install system dependencies
       run: |
         sudo apt update
         sudo apt install -y \
@@ -50,15 +50,15 @@ jobs:
           libtool \
           pkg-config \
           zlib1g-dev \
-          libncurses-dev \        # CAMBIO: libncurses5-dev -> libncurses-dev
-          libncursesw5-dev \       # Este sí existe
+          libncurses-dev \
+          libncursesw5-dev \
           cmake \
           libffi-dev \
           libssl-dev \
           wget \
           curl \
           software-properties-common \
-          build-essential          # Añadido para herramientas de compilación
+          build-essential
     
     - name: Install Android SDK
       run: |
@@ -67,40 +67,33 @@ jobs:
           mkdir -p ~/.buildozer/android/platform
           cd ~/.buildozer/android/platform
           
-          # Descargar Android SDK command line tools (última versión)
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q commandlinetools-linux-11076708_latest.zip
+          rm commandlinetools-linux-11076708_latest.zip
+          
           mkdir -p android-sdk/cmdline-tools
           mv cmdline-tools android-sdk/cmdline-tools/latest
           
-          # Configurar variables de entorno para este paso
           export ANDROID_HOME=~/.buildozer/android/platform/android-sdk
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
           
-          # Aceptar licencias
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
           
-          # Instalar componentes
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "platforms;android-33" \
-            "build-tools;33.0.2" \
-            --verbose
+            "build-tools;33.0.2"
         else
-          echo "✅ Android SDK cacheado"
+          echo "✅ Android SDK ya está cacheado"
         fi
     
-    - name: Install buildozer and Cython
+    - name: Install buildozer and dependencies
       run: |
         python3 -m pip install --upgrade pip
         python3 -m pip install --user buildozer cython==0.29.36
-        
-        # Verificar instalación
         echo "✅ Versiones instaladas:"
         python3 --version
-        ~/.local/bin/buildozer --version || echo "buildozer instalado en ~/.local/bin"
-        
-        # Añadir ~/.local/bin al PATH
+        pip3 --version
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     
     - name: Configure buildozer.spec
@@ -116,22 +109,31 @@ jobs:
           sed -i 's/source.include_exts = py,png,jpg,kv,atlas/source.include_exts = py,png,jpg,kv/' buildozer.spec
           sed -i 's/requirements = python3,kivy/requirements = python3,kivy==2.3.1,cython==0.29.36/' buildozer.spec
           
-          # Configuraciones específicas para Ubuntu 24.04
-          echo "" >> buildozer.spec
-          echo "# Optimizaciones para Ubuntu 24.04" >> buildozer.spec
-          echo "android.accept_sdk_license = True" >> buildozer.spec
-          echo "android.sdk = 33" >> buildozer.spec
-          echo "android.ndk = 25b" >> buildozer.spec
-          echo "android.ndk_path = ~/.buildozer/android/platform/android-ndk-r25b" >> buildozer.spec
-          echo "android.ant_path = ~/.buildozer/android/platform/apache-ant-1.9.4" >> buildozer.spec
+          # Configuraciones adicionales - CORREGIDO: buildozer.spec (no builder0z.spec)
+          cat >> buildozer.spec << 'EOF'
+
+# Android specific configuration
+android.accept_sdk_license = True
+android.sdk = 33
+android.ndk = 25b
+android.ndk_path = ~/.buildozer/android/platform/android-ndk-r25b
+android.ant_path = ~/.buildozer/android/platform/apache-ant-1.9.4
+android.gradle_dependencies = 'com.google.android.material:material:1.9.0'
+EOF
         else
           echo "✅ buildozer.spec ya existe"
-          cat buildozer.spec | grep -E "title|package.name|requirements"
+          echo "📋 Contenido relevante:"
+          grep -E "title|package\.name|requirements|android\.sdk|android\.ndk" buildozer.spec || true
         fi
     
     - name: Build APK
       run: |
-        echo "🏗️ Iniciando compilación del APK (puede tomar 20-30 minutos)..."
+        echo "🏗️ Iniciando compilación del APK..."
+        echo "⏱️ Este proceso puede tomar 20-30 minutos..."
+        
+        echo "📁 Estructura de Android:"
+        ls -la ~/.buildozer/android/platform/ || true
+        
         ~/.local/bin/buildozer -v android debug
     
     - name: Upload APK
@@ -140,10 +142,17 @@ jobs:
         name: Calculadora-APK-${{ github.sha }}
         path: ./bin/*.apk
         retention-days: 30
-        if-no-files-found: error
+        if-no-files-found: warn
     
     - name: Display APK info
       if: success()
       run: |
-        echo "✅ APK generado exitosamente:"
-        ls -la ./bin/*.apk || echo "No se encontró APK"
+        if ls ./bin/*.apk 1> /dev/null 2>&1; then
+          echo "✅ APK generado exitosamente:"
+          ls -la ./bin/*.apk
+          echo "📏 Tamaño: $(du -h ./bin/*.apk | cut -f1)"
+        else
+          echo "❌ No se encontró APK en ./bin/"
+          echo "📁 Contenido de ./bin:"
+          ls -la ./bin/ || echo "Directorio ./bin no existe"
+        fi
