@@ -37,24 +37,25 @@ jobs:
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: Pre-install Android Build Tools (Fix AIDL)
+    - name: Pre-install Android SDK & Fix Paths
       run: |
-        # Definir rutas para el SDK que Buildozer usará
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         mkdir -p $ANDROID_HOME/cmdline-tools
         
-        # Descargar herramientas de línea de comandos oficiales si no existen
+        # 1. Descargar herramientas de línea de comandos
         cd $ANDROID_HOME/cmdline-tools
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
         unzip -q commandlinetools-linux-9477386_latest.zip
         mv cmdline-tools latest
         
-        # Aceptar licencias e instalar versión ESTABLE 34.0.0 (evita la 37-rc1)
+        # 2. Aceptar licencias e instalar componentes estables
         yes | ./latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "build-tools;34.0.0" "platforms;android-33" "platform-tools"
         
-        # Crear un link simbólico por si Buildozer busca en la ruta antigua
-        mkdir -p $ANDROID_HOME/build-tools
-        echo "✅ Build-tools 34.0.0 instalado manualmente."
+        # 3. SOLUCIÓN AL ERROR: Crear enlaces simbólicos para que Buildozer encuentre sdkmanager
+        mkdir -p $ANDROID_HOME/tools/bin
+        ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager
+        
+        echo "✅ SDK y enlaces simbólicos configurados correctamente."
 
     - name: Configure buildozer.spec
       run: |
@@ -62,29 +63,31 @@ jobs:
           buildozer init
         fi
         
-        # Configuración forzada para evitar versiones RC
+        # Forzar configuración estable
         sed -i 's/^title = .*/title = Calculadora Educativa/' buildozer.spec
         sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
         sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0/' buildozer.spec
-        
-        # Forzar API y Build Tools específicas
         sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
         
-        # Insertar la línea de build_tools justo después de la API
-        sed -i '/android.api = 33/a android.build_tools_version = 34.0.0' buildozer.spec
+        # Asegurar versión de build tools
+        if grep -q "android.build_tools_version =" buildozer.spec; then
+          sed -i 's/^android.build_tools_version = .*/android.build_tools_version = 34.0.0/' buildozer.spec
+        else
+          sed -i '/android.api = 33/a android.build_tools_version = 34.0.0' buildozer.spec
+        fi
         
-        # [span_2](start_span)[span_3](start_span)Eliminar cualquier configuración de NDK/SDK manual previa que cause conflicto[span_2](end_span)[span_3](end_span)
+        # Limpiar rutas conflictivas
         sed -i '/android.ndk_path =/d' buildozer.spec
         sed -i '/android.sdk_path =/d' buildozer.spec
 
     - name: Build APK
       run: |
-        # Forzar a Buildozer a usar el SDK que acabamos de preparar
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-        export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
+        # Añadir las rutas al PATH para esta ejecución
+        export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools
         
-        echo "🏗️ Iniciando compilación final..."
+        echo "🏗️ Iniciando compilación..."
         buildozer -v android debug
     
     - name: Upload APK
