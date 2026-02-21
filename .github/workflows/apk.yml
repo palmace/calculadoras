@@ -23,7 +23,7 @@ jobs:
       with:
         python-version: "3.11"
     
-    - name: Cache Android SDK and Buildozer (solo SDK, no builds)
+    - name: Cache Android SDK and Buildozer
       uses: actions/cache@v4
       with:
         path: |
@@ -69,24 +69,14 @@ jobs:
             "ndk;25.2.9519653"
         fi
 
-    - name: 🔥 LIMPIEZA TOTAL - Eliminar TODAS las compilaciones previas
+    - name: 🔥 LIMPIEZA TOTAL
       run: |
-        echo "🔥 Eliminando TODAS las compilaciones previas para forzar compilación desde cero..."
-        
-        # Eliminar carpetas de build en .buildozer
+        echo "🔥 Eliminando TODAS las compilaciones previas..."
         rm -rf ~/.buildozer/android/platform/build-*
-        rm -rf ~/.buildozer/android/platform/build
-        rm -rf ~/.buildozer/android/platform/build_*
-        
-        # Eliminar cualquier APK previo
-        rm -rf bin/
-        rm -rf **/*.apk
-        find . -name "*.apk" -type f -delete
-        
-        # Eliminar .buildozer local
         rm -rf .buildozer/
-        
-        echo "✅ Limpieza total completada. Todo listo para compilación FRESCA."
+        rm -rf bin/
+        find . -name "*.apk" -type f -delete
+        echo "✅ Limpieza total completada."
 
     - name: Verificar archivo main.py
       run: |
@@ -94,8 +84,6 @@ jobs:
         if [ -f main.py ]; then
           echo "✅ main.py encontrado"
           ls -la main.py
-          echo "📝 Primeras 10 líneas:"
-          head -10 main.py
         else
           echo "❌ ERROR: No se encuentra main.py"
           ls -la *.py
@@ -104,11 +92,10 @@ jobs:
 
     - name: Configurar buildozer.spec
       run: |
-        # Eliminar spec existente y crear uno nuevo
+        # Eliminar spec existente
         rm -f buildozer.spec
-        buildozer init
         
-        # Configuración completa
+        # Crear spec NUEVO con indentación CORRECTA
         cat > buildozer.spec << 'EOF'
 [app]
 title = Calculadora Matemática Pro
@@ -140,125 +127,57 @@ EOF
         echo "✅ buildozer.spec creado:"
         cat buildozer.spec
 
-    - name: 🏗️ COMPILAR APK (FORZADO - 20-40 minutos)
+    - name: 🏗️ COMPILAR APK
       run: |
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         export ANDROID_SDK_ROOT=$ANDROID_HOME
         export ANDROID_NDK=$ANDROID_HOME/ndk/25.2.9519653
-        export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653
-        export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.2.9519653
         export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools:$ANDROID_NDK
         
-        echo "🏗️ =================================="
-        echo "🏗️ INICIANDO COMPILACIÓN COMPLETA"
-        echo "🏗️ ESTO TOMARÁ 20-40 MINUTOS"
-        echo "🏗️ =================================="
-        echo ""
-        echo "📋 Configuración:"
-        echo "  - Python: $(python3 --version)"
-        echo "  - Buildozer: $(buildozer --version)"
-        echo "  - ANDROID_HOME: $ANDROID_HOME"
-        echo "  - NDK: $ANDROID_NDK"
-        echo "  - Fecha: $(date)"
-        echo ""
+        echo "🏗️ INICIANDO COMPILACIÓN (20-40 minutos)..."
+        echo "Fecha inicio: $(date)"
         
-        # Compilar y guardar log completo
-        buildozer -v android debug 2>&1 | tee build-completo.log
+        # Compilar
+        buildozer -v android debug 2>&1 | tee build.log
         
-        echo ""
-        echo "✅ COMPILACIÓN FINALIZADA - $(date)"
-        echo ""
+        echo "Fecha fin: $(date)"
 
-    - name: 🔍 BÚSQUEDA EXHAUSTIVA DE APK (TODO EL PROYECTO)
+    - name: 🔍 BÚSQUEDA DE APK
       id: find-apk
       run: |
         echo "🔍 Buscando APKs en TODO el proyecto..."
-        echo ""
         
-        # Buscar en TODAS las ubicaciones posibles
-        echo "📁 1. Buscando en el directorio actual:"
-        find . -name "*.apk" -type f | tee found_apks.txt
+        # Buscar en todas partes
+        find . -name "*.apk" -type f > found_apks.txt
+        find ~/.buildozer -name "*.apk" -type f 2>/dev/null >> found_apks.txt
         
-        echo ""
-        echo "📁 2. Buscando en .buildozer:"
-        find ~/.buildozer -name "*.apk" -type f 2>/dev/null | tee -a found_apks.txt
-        
-        echo ""
-        echo "📁 3. Buscando en el directorio home:"
-        find $HOME -name "*.apk" -type f 2>/dev/null | grep -v "android/sdk" | tee -a found_apks.txt || true
-        
-        # Contar y procesar resultados
-        APK_COUNT=$(cat found_apks.txt | grep -v '^$' | wc -l)
-        
-        if [ "$APK_COUNT" -gt 0 ]; then
-          echo ""
-          echo "✅ ¡ENCONTRADOS $APK_COUNT APK(S)!"
-          echo ""
-          echo "📋 Lista completa de APKs encontrados:"
+        if [ -s found_apks.txt ]; then
+          echo "✅ APKs encontrados:"
           cat found_apks.txt
-          
-          # Copiar todos a una carpeta para subirlos
           mkdir -p apk_output
           while IFS= read -r apk; do
             if [ -f "$apk" ]; then
-              echo "📦 Copiando: $apk"
-              cp "$apk" apk_output/ 2>/dev/null || echo "  ⚠️ No se pudo copiar"
+              cp "$apk" apk_output/ 2>/dev/null || true
             fi
           done < found_apks.txt
-          
           echo "APK_FOUND=true" >> $GITHUB_ENV
-          echo "APK_COUNT=$APK_COUNT" >> $GITHUB_ENV
         else
-          echo ""
-          echo "❌ NO SE ENCONTRÓ NINGÚN APK"
+          echo "❌ No se encontraron APKs"
           echo "APK_FOUND=false" >> $GITHUB_ENV
         fi
-        
-        echo ""
-        echo "📁 Contenido de los directorios relevantes:"
-        echo "  - bin/: $(ls -la bin/ 2>/dev/null | wc -l) archivos"
-        echo "  - .buildozer: $(ls -la ~/.buildozer/android/platform/ 2>/dev/null | wc -l) elementos"
 
-    - name: 📦 SUBIR APKS ENCONTRADOS
+    - name: 📦 SUBIR APK
       if: env.APK_FOUND == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: Calculadora-APK-Multiple
+        name: Calculadora-APK
         path: apk_output/
         retention-days: 30
-        if-no-files-found: warn
 
-    - name: 📋 SUBIR LOG COMPLETO
+    - name: 📋 SUBIR LOG
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: build-log-completo
-        path: build-completo.log
+        name: build-log
+        path: build.log
         retention-days: 7
-
-    - name: 📊 REPORTE FINAL
-      if: always()
-      run: |
-        echo "==================================="
-        echo "📊 REPORTE FINAL DE COMPILACIÓN"
-        echo "==================================="
-        echo ""
-        echo "⏱️ Tiempo total: $(( SECONDS / 60 )) minutos"
-        echo ""
-        
-        if [ "${{ env.APK_FOUND }}" == "true" ]; then
-          echo "✅ RESULTADO: ÉXITO - Se encontraron ${{ env.APK_COUNT }} APK(s)"
-          echo ""
-          echo "📦 APKs disponibles para descargar:"
-          ls -la apk_output/ || true
-        else
-          echo "❌ RESULTADO: FALLÓ - No se generó ningún APK"
-          echo ""
-          echo "🔍 Últimas 50 líneas del log para depuración:"
-          echo "-----------------------------------"
-          tail -50 build-completo.log || echo "No hay log disponible"
-          echo "-----------------------------------"
-          echo ""
-          echo "📁 Para más detalles, descarga el 'build-log-completo'"
-        fi
-        echo "==================================="
