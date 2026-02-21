@@ -47,53 +47,59 @@ jobs:
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: 🔧 Configurar buildozer.spec CON VERSIÓN ESTABLE
+    - name: 🔧 SOBRESCRIBIR buildozer.spec completamente
       run: |
-        if [ ! -f buildozer.spec ]; then
-          buildozer init
-        fi
+        echo "📝 Creando buildozer.spec desde cero..."
         
-        # Configuración básica
-        sed -i 's/^title = .*/title = Calculadora Matemática Pro/' buildozer.spec
-        sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
-        sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
-        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,cython/' buildozer.spec
+        # Eliminar spec existente
+        rm -f buildozer.spec
         
-        # Configuración Android - API y NDK
-        sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
-        sed -i 's/^android.minapi = .*/android.minapi = 21/' buildozer.spec
-        sed -i 's/^android.sdk = .*/android.sdk = 33/' buildozer.spec
-        sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec
-        sed -i 's/^android.archs = .*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
-        sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
-        
-        # 🔴 CRÍTICO: Fijar versión ESTABLE de build-tools (NO rc)
-        if grep -q "^android.build_tools_version" buildozer.spec; then
-          sed -i 's/^android.build_tools_version = .*/android.build_tools_version = 34.0.0/' buildozer.spec
-        else
-          # Añadir después de android.sdk
-          sed -i '/android.sdk = 33/a android.build_tools_version = 34.0.0' buildozer.spec
-        fi
-        
-        # Eliminar rutas fijas que causan conflictos
-        sed -i '/android.sdk_path/d' buildozer.spec
-        sed -i '/android.ndk_path/d' buildozer.spec
-        
-        echo "✅ buildozer.spec configurado:"
-        grep -E "title|package|requirements|android" buildozer.spec
+        # Crear spec NUEVO con valores exactos
+        cat > buildozer.spec << 'EOF'
+[app]
+title = Calculadora Matemática Pro
+package.name = calculadoramath
+package.domain = org.palmace
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 0.1
+requirements = python3,kivy==2.3.0,cython
+orientation = portrait
+osx.python_version = 3
+osx.kivy_version = 2.3.0
+fullscreen = 0
+log_level = 2
 
-    - name: 🧹 Limpiar SDK para evitar conflictos de versión
-      run: |
-        # Eliminar cualquier build-tools previo que cause problemas
-        rm -rf ~/.buildozer/android/platform/android-sdk/build-tools 2>/dev/null || true
-        echo "✅ SDK limpiado"
+[buildozer]
+log_level = 2
+warn_on_root = 1
+
+[android]
+api = 33
+minapi = 21
+sdk = 33
+ndk = 25b
+archs = arm64-v8a, armeabi-v7a
+accept_sdk_license = True
+build_tools_version = 34.0.0
+EOF
+        
+        echo "✅ buildozer.spec creado:"
+        cat buildozer.spec
+        echo ""
+        echo "🔍 Verificando que build_tools_version = 34.0.0 esté presente:"
+        grep "build_tools_version" buildozer.spec
 
     - name: 🏗️ Compilar APK
       run: |
         export PATH=$PATH:$HOME/.local/bin
         
         echo "🏗️ INICIANDO COMPILACIÓN (20-40 minutos)..."
-        echo "📋 Usando build-tools 34.0.0 (estable)"
+        echo "📋 Versión de build-tools forzada: 34.0.0"
+        
+        # Mostrar el spec antes de compilar
+        echo "📋 buildozer.spec actual:"
+        cat buildozer.spec
         
         # Compilar
         buildozer -v android debug 2>&1 | tee build.log
