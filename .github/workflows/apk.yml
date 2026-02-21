@@ -23,6 +23,17 @@ jobs:
       with:
         python-version: "3.11"
     
+    - name: Cache Android SDK and Buildozer
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.buildozer
+          ~/.gradle
+          ~/.cache/pip
+        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-buildozer-
+    
     - name: Install system dependencies
       run: |
         sudo apt update
@@ -30,6 +41,10 @@ jobs:
           git zip unzip openjdk-17-jdk python3-pip python3-dev python3-venv \
           autoconf libtool pkg-config zlib1g-dev libncurses-dev libncursesw5-dev \
           cmake libffi-dev libssl-dev wget curl software-properties-common build-essential
+        
+        # ELIMINAR NDK DEL SISTEMA QUE CAUSA CONFLICTOS
+        sudo rm -rf /usr/local/lib/android/sdk/ndk || true
+        sudo rm -rf /usr/local/lib/android/sdk/ndk-bundle || true
 
     - name: Install buildozer and cython
       run: |
@@ -37,30 +52,32 @@ jobs:
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: Pre-install Android SDK & NDK
+    - name: Pre-install Android SDK & NDK (25b)
       run: |
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         mkdir -p $ANDROID_HOME/cmdline-tools
         
-        # 1. Descargar herramientas de línea de comandos
-        cd $ANDROID_HOME/cmdline-tools
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-        unzip -q commandlinetools-linux-9477386_latest.zip
-        mv cmdline-tools latest
+        if [ ! -f $ANDROID_HOME/ndk/25.2.9519653/source.properties ]; then
+          echo "📦 Instalando Android SDK y NDK..."
+          
+          cd $ANDROID_HOME/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          mv cmdline-tools latest
+          
+          yes | ./latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1 || true
+          
+          yes | ./latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
+            "build-tools;34.0.0" \
+            "platforms;android-33" \
+            "platform-tools" \
+            "ndk;25.2.9519653"
+        fi
         
-        # 2. Aceptar licencias e instalar componentes
-        yes | ./latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "build-tools;34.0.0" "platforms;android-33" "platform-tools"
-        
-        # 3. Instalar específicamente NDK r25b (el que espera Buildozer)
-        yes | ./latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "ndk;25.2.9519653"
-        
-        # 4. Crear estructura de directorios que Buildozer espera
+        # Configurar enlaces
         mkdir -p $ANDROID_HOME/tools/bin
-        ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager
-        
-        # 5. IMPORTANTE: Limpiar variables de entorno conflictivas del sistema
-        echo "NDK instalado correctamente en: $ANDROID_HOME/ndk/25.2.9519653"
-        echo "✅ SDK y NDK configurados correctamente."
+        ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager
+        ln -sf $ANDROID_HOME/ndk/25.2.9519653 $ANDROID_HOME/ndk-bundle
 
     - name: Configure buildozer.spec
       run: |
@@ -68,47 +85,42 @@ jobs:
           buildozer init
         fi
         
-        # Configurar buildozer.spec
         sed -i 's/^title = .*/title = Calculadora Educativa/' buildozer.spec
         sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
-        sed -i 's/^requirements = .*/requirements = python3,kivy/' buildozer.spec
-        sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
+        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,cython/' buildozer.spec
         sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
-        
-        # Asegurar versión de build tools
-        if grep -q "android.build_tools_version =" buildozer.spec; then
-          sed -i 's/^android.build_tools_version = .*/android.build_tools_version = 34.0.0/' buildozer.spec
-        else
-          sed -i '/android.api = 33/a android.build_tools_version = 34.0.0' buildozer.spec
-        fi
-        
-        # FIJAR VERSIÓN DEL NDK (CRÍTICO)
-        if grep -q "android.ndk =" buildozer.spec; then
-          sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec
-        else
-          sed -i '/android.build_tools_version = 34.0.0/a android.ndk = 25b' buildozer.spec
-        fi
-        
-        # Eliminar rutas fijas que causan conflictos
+        sed -i 's/^android.minapi = .*/android.minapi = 21/' buildozer.spec
+        sed -i 's/^android.sdk = .*/android.sdk = 33/' buildozer.spec
+        sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec
+        sed -i 's/^android.archs = .*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
+        sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         sed -i '/android.ndk_path =/d' buildozer.spec
         sed -i '/android.sdk_path =/d' buildozer.spec
 
     - name: Build APK
       run: |
-        # Limpiar variables del sistema que causan conflicto
-        unset ANDROID_NDK ANDROID_NDK_HOME ANDROID_NDK_ROOT
-        
+        # FORZAR USO DE NUESTRO NDK
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         export ANDROID_SDK_ROOT=$ANDROID_HOME
-        export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools
+        export ANDROID_NDK=$ANDROID_HOME/ndk/25.2.9519653
+        export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653
+        export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.2.9519653
+        export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools:$ANDROID_NDK
         
-        echo "🏗️ Iniciando compilación..."
-        echo "Usando NDK: $ANDROID_HOME/ndk/25.2.9519653"
-        
-        buildozer -v android debug
+        yes | buildozer -v android debug 2>&1 | tee build.log
     
     - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: Calculadora-APK
         path: bin/*.apk
+        retention-days: 30
+    
+    - name: Upload build log on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
+        retention-days: 7
