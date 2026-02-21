@@ -47,7 +47,7 @@ jobs:
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: 🔧 Configurar buildozer.spec CON VERSIÓN ESTABLE
+    - name: 🏗️ Configurar buildozer.spec CON ESTRUCTURA ACTUAL
       run: |
         if [ ! -f buildozer.spec ]; then
           buildozer init
@@ -57,41 +57,48 @@ jobs:
         sed -i 's/^title = .*/title = Calculadora Matemática Pro/' buildozer.spec
         sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
         sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
-        sed -i 's/^source.include_exts = .*/source.include_exts = py,png,jpg,kv,atlas/' buildozer.spec
-        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,cython,libffi,pillow,requests,plyer/' buildozer.spec
+        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,cython/' buildozer.spec
         
-        # Configuración Android - VERSIONES ESTABLES
+        # 🔴 CONFIGURACIÓN CRÍTICA PARA SDK MODERNO
+        # No especificar android.sdk ni android.ndk_path - dejar que Buildozer maneje
         sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
         sed -i 's/^android.minapi = .*/android.minapi = 21/' buildozer.spec
-        sed -i 's/^android.sdk = .*/android.sdk = 33/' buildozer.spec
-        sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec
-        sed -i 's/^android.archs = .*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
-        sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         
-        # 🔴 CRÍTICO: Fijar versión ESTABLE de build-tools (NO rc)
+        # Especificar NDK pero NO la ruta
+        sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec
+        
+        # NO especificar android.sdk_path ni android.ndk_path
+        sed -i '/android.sdk_path/d' buildozer.spec
+        sed -i '/android.ndk_path/d' buildozer.spec
+        
+        # Especificar build tools version pero dejar que se instale en la estructura moderna
         if grep -q "^android.build_tools_version" buildozer.spec; then
           sed -i 's/^android.build_tools_version = .*/android.build_tools_version = 34.0.0/' buildozer.spec
         else
-          sed -i '/android.sdk = 33/a android.build_tools_version = 34.0.0' buildozer.spec
+          sed -i '/android.api = 33/a android.build_tools_version = 34.0.0' buildozer.spec
         fi
         
-        # Eliminar rutas fijas
-        sed -i '/android.ndk_path/d' buildozer.spec
-        sed -i '/android.sdk_path/d' buildozer.spec
+        sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         
         echo "✅ buildozer.spec configurado:"
         grep -E "title|package|requirements|android" buildozer.spec
 
-    - name: 🏗️ Compilar APK (con timeout extendido)
+    - name: 🧹 Limpiar posibles conflictos de estructura
       run: |
-        export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-        export ANDROID_SDK_ROOT=$ANDROID_HOME
-        export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools
+        echo "🧹 Asegurando estructura moderna de SDK..."
+        # Eliminar instalaciones previas conflictivas
+        rm -rf ~/.buildozer/android/platform/android-sdk/build-tools 2>/dev/null || true
+        rm -rf ~/.buildozer/android/platform/android-sdk/tools 2>/dev/null || true
+        echo "✅ Listo"
+
+    - name: 🏗️ Compilar APK
+      run: |
+        # NO forzar ANDROID_HOME manualmente - dejar que Buildozer decida
+        # Solo asegurar que el PATH incluya ~/.local/bin
+        export PATH=$PATH:$HOME/.local/bin
         
         echo "🏗️ INICIANDO COMPILACIÓN (20-40 minutos)..."
-        echo "📋 Configuración:"
-        echo "  - ANDROID_HOME: $ANDROID_HOME"
-        echo "  - Build tools: 34.0.0 (estable)"
+        echo "📋 Estructura moderna de SDK será gestionada por Buildozer"
         
         # Compilar
         buildozer -v android debug 2>&1 | tee build.log
@@ -113,6 +120,8 @@ jobs:
           echo "APK_FOUND=true" >> $GITHUB_ENV
         else
           echo "❌ No se encontró APK"
+          echo "📁 Contenido de ~/.buildozer/android/platform/:"
+          ls -la ~/.buildozer/android/platform/ 2>/dev/null || echo "Directorio no existe"
         fi
 
     - name: 📦 Subir APK
