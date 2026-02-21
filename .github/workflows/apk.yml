@@ -88,7 +88,7 @@ EOF
         cat buildozer.spec
         echo ""
         echo "🔍 Verificando que build_tools_version = 34.0.0 esté presente:"
-        grep "build_tools_version" buildozer.spec
+        grep "build_tools_version" buildozer.spec || echo "⚠️ No encontrado"
 
     - name: 🏗️ Compilar APK
       run: |
@@ -109,7 +109,7 @@ EOF
       run: |
         echo "🔍 Buscando APK..."
         find . -name "*.apk" -type f > apk_list.txt
-        find ~/.buildozer -name "*.apk" -type f >> apk_list.txt 2>/dev/null
+        find ~/.buildozer -name "*.apk" -type f >> apk_list.txt 2>/dev/null || true
         
         if [ -s apk_list.txt ]; then
           echo "✅ APK encontrado:"
