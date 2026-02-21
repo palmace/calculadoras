@@ -1,183 +1,42 @@
-name: Build APK Calculadora
+name: Diagnosticar error
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
-concurrency:
-  group: build-apk-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build:
+  diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
+    - name: Verificar Python
+      run: |
+        python --version
+        echo "✅ Python OK"
     
-    - name: Cache Android SDK and Buildozer
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.buildozer/android/platform/android-sdk
-          ~/.gradle
-          ~/.cache/pip
-        key: ${{ runner.os }}-sdk-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          ${{ runner.os }}-sdk-
-    
-    - name: Install system dependencies
+    - name: Verificar archivos
       run: |
-        sudo apt update
-        sudo apt install -y \
-          git zip unzip openjdk-17-jdk python3-pip python3-dev python3-venv \
-          autoconf libtool pkg-config zlib1g-dev libncurses-dev libncursesw5-dev \
-          cmake libffi-dev libssl-dev wget curl software-properties-common build-essential
-        sudo rm -rf /usr/local/lib/android/sdk/ndk || true
-
-    - name: Install buildozer and dependencies
-      run: |
-        python3 -m pip install --upgrade pip
-        python3 -m pip install --user buildozer "cython<3.0"
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-    - name: Pre-install Android SDK & NDK
-      run: |
-        export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-        mkdir -p $ANDROID_HOME/cmdline-tools
-        
-        if [ ! -f $ANDROID_HOME/ndk/25.2.9519653/source.properties ]; then
-          cd $ANDROID_HOME/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip
-          mv cmdline-tools latest
-          
-          yes | ./latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1 || true
-          
-          yes | ./latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
-            "build-tools;34.0.0" \
-            "platforms;android-33" \
-            "platform-tools" \
-            "ndk;25.2.9519653"
-        fi
-
-    - name: 🔥 LIMPIEZA TOTAL
-      run: |
-        echo "🔥 Eliminando TODAS las compilaciones previas..."
-        rm -rf ~/.buildozer/android/platform/build-*
-        rm -rf .buildozer/
-        rm -rf bin/
-        find . -name "*.apk" -type f -delete
-        echo "✅ Limpieza total completada."
-
-    - name: Verificar archivo main.py
-      run: |
-        echo "🔍 Verificando archivo principal..."
+        echo "📁 Archivos en el repositorio:"
+        ls -la
+        echo ""
+        echo "🔍 Buscando main.py:"
         if [ -f main.py ]; then
-          echo "✅ main.py encontrado"
-          ls -la main.py
+          echo "✅ main.py existe"
+          head -5 main.py
         else
-          echo "❌ ERROR: No se encuentra main.py"
-          ls -la *.py
-          exit 1
+          echo "❌ main.py NO existe"
+          find . -name "*.py" -type f
         fi
-
-    - name: Configurar buildozer.spec
+    
+    - name: Verificar buildozer.spec
       run: |
-        # Eliminar spec existente
-        rm -f buildozer.spec
-        
-        # Crear spec NUEVO con indentación CORRECTA
-        cat > buildozer.spec << 'EOF'
-[app]
-title = Calculadora Matemática Pro
-package.name = calculadoramath
-package.domain = org.palmace
-source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
-version = 0.1
-requirements = python3,kivy==2.3.0,cython,libffi,pillow,requests,plyer
-orientation = portrait
-osx.python_version = 3
-osx.kivy_version = 2.3.0
-fullscreen = 0
-log_level = 2
-
-[buildozer]
-log_level = 2
-warn_on_root = 1
-
-[android]
-api = 33
-minapi = 21
-sdk = 33
-ndk = 25b
-archs = arm64-v8a, armeabi-v7a
-accept_sdk_license = True
-EOF
-        
-        echo "✅ buildozer.spec creado:"
-        cat buildozer.spec
-
-    - name: 🏗️ COMPILAR APK
-      run: |
-        export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-        export ANDROID_SDK_ROOT=$ANDROID_HOME
-        export ANDROID_NDK=$ANDROID_HOME/ndk/25.2.9519653
-        export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools:$ANDROID_NDK
-        
-        echo "🏗️ INICIANDO COMPILACIÓN (20-40 minutos)..."
-        echo "Fecha inicio: $(date)"
-        
-        # Compilar
-        buildozer -v android debug 2>&1 | tee build.log
-        
-        echo "Fecha fin: $(date)"
-
-    - name: 🔍 BÚSQUEDA DE APK
-      id: find-apk
-      run: |
-        echo "🔍 Buscando APKs en TODO el proyecto..."
-        
-        # Buscar en todas partes
-        find . -name "*.apk" -type f > found_apks.txt
-        find ~/.buildozer -name "*.apk" -type f 2>/dev/null >> found_apks.txt
-        
-        if [ -s found_apks.txt ]; then
-          echo "✅ APKs encontrados:"
-          cat found_apks.txt
-          mkdir -p apk_output
-          while IFS= read -r apk; do
-            if [ -f "$apk" ]; then
-              cp "$apk" apk_output/ 2>/dev/null || true
-            fi
-          done < found_apks.txt
-          echo "APK_FOUND=true" >> $GITHUB_ENV
+        if [ -f buildozer.spec ]; then
+          echo "📋 Contenido de buildozer.spec:"
+          cat buildozer.spec
         else
-          echo "❌ No se encontraron APKs"
-          echo "APK_FOUND=false" >> $GITHUB_ENV
+          echo "⚠️ No hay buildozer.spec"
         fi
-
-    - name: 📦 SUBIR APK
-      if: env.APK_FOUND == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: Calculadora-APK
-        path: apk_output/
-        retention-days: 30
-
-    - name: 📋 SUBIR LOG
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-log
-        path: build.log
-        retention-days: 7
