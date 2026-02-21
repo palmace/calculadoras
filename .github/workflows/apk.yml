@@ -23,6 +23,33 @@ jobs:
       with:
         python-version: "3.11"
     
+    # NUEVO: Instalar herramientas de autotools
+    - name: Install autotools and dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          m4 \
+          autopoint \
+          gettext \
+          git \
+          zip \
+          unzip \
+          openjdk-17-jdk \
+          python3-pip \
+          python3-dev \
+          python3-venv \
+          cmake \
+          libffi-dev \
+          libssl-dev \
+          wget \
+          curl \
+          software-properties-common \
+          build-essential
+    
     - name: Cache Android SDK and Buildozer
       uses: actions/cache@v4
       with:
@@ -30,31 +57,24 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.cache/pip
-        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}-${{ github.run_id }}
         restore-keys: |
+          ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
           ${{ runner.os }}-buildozer-
     
-    - name: Install system dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          git zip unzip openjdk-17-jdk python3-pip python3-dev python3-venv \
-          autoconf libtool pkg-config zlib1g-dev libncurses-dev libncursesw5-dev \
-          cmake libffi-dev libssl-dev wget curl software-properties-common build-essential
-        sudo rm -rf /usr/local/lib/android/sdk/ndk || true
-
-    - name: Install buildozer and dependencies
+    - name: Install buildozer and cython
       run: |
         python3 -m pip install --upgrade pip
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-
+    
     - name: Pre-install Android SDK & NDK
       run: |
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         mkdir -p $ANDROID_HOME/cmdline-tools
         
         if [ ! -f $ANDROID_HOME/ndk/25.2.9519653/source.properties ]; then
+          echo "📦 Instalando Android SDK y NDK..."
           cd $ANDROID_HOME/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-9477386_latest.zip
@@ -69,37 +89,28 @@ jobs:
             "ndk;25.2.9519653"
         fi
         
+        # Configurar enlaces
+        mkdir -p $ANDROID_HOME/tools/bin
         ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager 2>/dev/null || true
         ln -sf $ANDROID_HOME/ndk/25.2.9519653 $ANDROID_HOME/ndk-bundle 2>/dev/null || true
-
-    - name: Verificar archivo main.py
-      run: |
-        echo "🔍 Verificando archivo principal..."
-        if [ -f main.py ]; then
-          echo "✅ main.py encontrado"
-          ls -la main.py
-          echo "📝 Primeras 10 líneas:"
-          head -10 main.py
-        else
-          echo "❌ ERROR: No se encuentra main.py"
-          ls -la *.py
-          exit 1
-        fi
-
-    - name: Configurar buildozer.spec
+        
+        # Mostrar información
+        echo "✅ SDK instalado en: $ANDROID_HOME"
+        ls -la $ANDROID_HOME/ndk/ 2>/dev/null || echo "⚠️ NDK no encontrado"
+    
+    - name: Configure buildozer.spec
       run: |
         if [ ! -f buildozer.spec ]; then
+          echo "📝 Creando buildozer.spec..."
           buildozer init
         fi
         
-        # Configuración básica
+        # Configurar valores
         sed -i 's/^title = .*/title = Calculadora Matemática Pro/' buildozer.spec
         sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
         sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
         sed -i 's/^source.include_exts = .*/source.include_exts = py,png,jpg,kv,atlas/' buildozer.spec
         sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,cython,libffi,pillow,requests,plyer/' buildozer.spec
-        
-        # Configuración Android
         sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
         sed -i 's/^android.minapi = .*/android.minapi = 21/' buildozer.spec
         sed -i 's/^android.sdk = .*/android.sdk = 33/' buildozer.spec
@@ -107,22 +118,17 @@ jobs:
         sed -i 's/^android.archs = .*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
         sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         
-        # Aumentar log level para debug
-        sed -i 's/^log_level = .*/log_level = 2/' buildozer.spec
+        # Eliminar rutas fijas
+        sed -i '/android.ndk_path =/d' buildozer.spec
+        sed -i '/android.sdk_path =/d' buildozer.spec
         
-        echo "✅ buildozer.spec configurado:"
-        grep -E "title|package|requirements|android" buildozer.spec
-
-    - name: 🧹 Limpiar compilaciones anteriores
+        # Mostrar configuración
+        echo "📋 buildozer.spec configurado:"
+        grep -E "title|package|requirements|android.api|android.ndk" buildozer.spec
+    
+    - name: Build APK
       run: |
-        echo "🧹 Limpiando builds anteriores para forzar compilación completa..."
-        rm -rf ~/.buildozer/android/platform/build-*
-        rm -rf bin/
-        mkdir -p bin/
-        echo "✅ Limpieza completada"
-
-    - name: 🏗️ Compilar APK (con tiempo real)
-      run: |
+        # Configurar variables
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         export ANDROID_SDK_ROOT=$ANDROID_HOME
         export ANDROID_NDK=$ANDROID_HOME/ndk/25.2.9519653
@@ -130,65 +136,47 @@ jobs:
         export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.2.9519653
         export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools:$ANDROID_NDK
         
-        echo "🏗️ INICIANDO COMPILACIÓN COMPLETA (20-40 minutos)..."
+        echo "🏗️ Iniciando compilación..."
         echo "📋 Configuración:"
-        echo "  - Python: $(python3 --version)"
-        echo "  - Buildozer: $(buildozer --version)"
         echo "  - ANDROID_HOME: $ANDROID_HOME"
         echo "  - NDK: $ANDROID_NDK"
+        echo "  - NDK version: $(cat $ANDROID_NDK/source.properties 2>/dev/null | grep Pkg.Revision || echo 'desconocida')"
         
-        # Compilar con log detallado y guardar salida
-        buildozer -v android debug 2>&1 | tee build.log
-        
-        # Verificar resultado
-        echo "🔍 Buscando APKs generados..."
-        find . -name "*.apk" -type f | tee apk-list.txt
-        
-        # Si hay APK, mostrarlo
-        if [ -s apk-list.txt ]; then
-          echo "✅ APK encontrado:"
-          cat apk-list.txt
-          # Copiar a ubicación conocida
-          APK_PATH=$(head -1 apk-list.txt)
-          cp "$APK_PATH" bin/ 2>/dev/null || true
-        else
-          echo "❌ No se generó ningún APK"
-          echo "📁 Revisando directorios:"
-          ls -la ~/.buildozer/android/platform/build-*/ || true
-        fi
-
-    - name: 📦 Subir APK
+        # Compilar
+        yes | buildozer -v android debug 2>&1 | tee build.log
+    
+    - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: Calculadora-Matematica-Pro
-        path: |
-          bin/*.apk
-          **/*.apk
-        if-no-files-found: warn
+        path: bin/*.apk
         retention-days: 30
+        if-no-files-found: warn
     
-    - name: 📋 Subir log de compilación
-      if: always()
+    - name: Upload build log on failure
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: build-log-completo
+        name: build-log-detallado
         path: build.log
         retention-days: 7
-
-    - name: 🔍 Diagnóstico final
+    
+    - name: Display APK info
+      if: success()
+      run: |
+        echo "✅ APK generado exitosamente:"
+        ls -lh bin/ || echo "No se encontraron archivos en bin/"
+    
+    - name: Diagnostic info (siempre)
       if: always()
       run: |
-        echo "=== DIAGNÓSTICO FINAL ==="
-        echo "Tiempo de compilación: $(( SECONDS / 60 )) minutos"
+        echo "=== INFORMACIÓN DE DIAGNÓSTICO ==="
+        echo "Python: $(python3 --version)"
+        echo "Buildozer: $(buildozer --version)"
+        echo "Java: $(java -version 2>&1 | head -n 1)"
+        echo "Autoconf: $(autoconf --version | head -n 1)"
+        echo "Libtool: $(libtool --version | head -n 1)"
         echo ""
-        echo "📁 Contenido de bin/:"
-        ls -la bin/ || echo "bin/ vacío o no existe"
-        echo ""
-        echo "📁 Buscando APKs en todo el directorio:"
-        find . -name "*.apk" -type f || echo "No se encontraron APKs"
-        echo ""
-        echo "📁 Contenido de .buildozer:"
-        ls -la ~/.buildozer/android/platform/ || true
-        echo ""
-        echo "📋 Últimas 50 líneas del log:"
-        tail -50 build.log || echo "No hay log"
+        echo "📁 Contenido de ~/.buildozer:"
+        ls -la ~/.buildozer/android/platform/ || echo "Directorio no existe"
