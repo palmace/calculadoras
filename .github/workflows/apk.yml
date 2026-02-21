@@ -47,20 +47,20 @@ jobs:
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: 🔧 Configurar buildozer.spec
+    - name: 🔧 Configurar buildozer.spec CON VERSIÓN ESTABLE
       run: |
-        # Si no existe buildozer.spec, crearlo
         if [ ! -f buildozer.spec ]; then
           buildozer init
         fi
         
-        # Configurar valores básicos (usando sed para compatibilidad)
+        # Configuración básica
         sed -i 's/^title = .*/title = Calculadora Matemática Pro/' buildozer.spec
         sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
         sed -i 's/^package.domain = .*/package.domain = org.palmace/' buildozer.spec
-        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,cython/' buildozer.spec
+        sed -i 's/^source.include_exts = .*/source.include_exts = py,png,jpg,kv,atlas/' buildozer.spec
+        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,cython,libffi,pillow,requests,plyer/' buildozer.spec
         
-        # Configuración Android
+        # Configuración Android - VERSIONES ESTABLES
         sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
         sed -i 's/^android.minapi = .*/android.minapi = 21/' buildozer.spec
         sed -i 's/^android.sdk = .*/android.sdk = 33/' buildozer.spec
@@ -68,52 +68,51 @@ jobs:
         sed -i 's/^android.archs = .*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
         sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
         
-        # Mostrar configuración
+        # 🔴 CRÍTICO: Fijar versión ESTABLE de build-tools (NO rc)
+        if grep -q "^android.build_tools_version" buildozer.spec; then
+          sed -i 's/^android.build_tools_version = .*/android.build_tools_version = 34.0.0/' buildozer.spec
+        else
+          sed -i '/android.sdk = 33/a android.build_tools_version = 34.0.0' buildozer.spec
+        fi
+        
+        # Eliminar rutas fijas
+        sed -i '/android.ndk_path/d' buildozer.spec
+        sed -i '/android.sdk_path/d' buildozer.spec
+        
         echo "✅ buildozer.spec configurado:"
         grep -E "title|package|requirements|android" buildozer.spec
 
-    - name: 🏗️ Compilar APK
+    - name: 🏗️ Compilar APK (con timeout extendido)
       run: |
-        echo "🏗️ INICIANDO COMPILACIÓN (puede tomar 20-40 minutos)..."
-        echo "Fecha inicio: $(date)"
-        
-        # Configurar variables
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         export ANDROID_SDK_ROOT=$ANDROID_HOME
         export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools
         
-        # Compilar
-        buildozer android debug 2>&1 | tee build.log
+        echo "🏗️ INICIANDO COMPILACIÓN (20-40 minutos)..."
+        echo "📋 Configuración:"
+        echo "  - ANDROID_HOME: $ANDROID_HOME"
+        echo "  - Build tools: 34.0.0 (estable)"
         
-        echo "Fecha fin: $(date)"
-
+        # Compilar
+        buildozer -v android debug 2>&1 | tee build.log
+    
     - name: 🔍 Buscar APK
       id: find-apk
       run: |
-        echo "🔍 Buscando APK generado..."
-        
-        # Buscar en ubicaciones comunes
+        echo "🔍 Buscando APK..."
         find . -name "*.apk" -type f > apk_list.txt
         find ~/.buildozer -name "*.apk" -type f >> apk_list.txt 2>/dev/null
         
         if [ -s apk_list.txt ]; then
           echo "✅ APK encontrado:"
           cat apk_list.txt
-          
-          # Crear directorio y copiar
           mkdir -p apk_output
           while IFS= read -r apk; do
-            if [ -f "$apk" ]; then
-              cp "$apk" apk_output/ 2>/dev/null || true
-            fi
+            cp "$apk" apk_output/ 2>/dev/null || true
           done < apk_list.txt
-          
           echo "APK_FOUND=true" >> $GITHUB_ENV
         else
           echo "❌ No se encontró APK"
-          echo "Contenido de bin/ si existe:"
-          ls -la bin/ 2>/dev/null || echo "bin/ no existe"
-          echo "APK_FOUND=false" >> $GITHUB_ENV
         fi
 
     - name: 📦 Subir APK
