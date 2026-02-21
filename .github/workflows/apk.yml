@@ -41,10 +41,7 @@ jobs:
           git zip unzip openjdk-17-jdk python3-pip python3-dev python3-venv \
           autoconf libtool pkg-config zlib1g-dev libncurses-dev libncursesw5-dev \
           cmake libffi-dev libssl-dev wget curl software-properties-common build-essential
-        
-        # ELIMINAR NDK DEL SISTEMA QUE CAUSA CONFLICTOS
         sudo rm -rf /usr/local/lib/android/sdk/ndk || true
-        sudo rm -rf /usr/local/lib/android/sdk/ndk-bundle || true
 
     - name: Install buildozer and cython
       run: |
@@ -52,14 +49,12 @@ jobs:
         python3 -m pip install --user buildozer "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: Pre-install Android SDK & NDK (25b)
+    - name: Pre-install Android SDK & NDK
       run: |
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         mkdir -p $ANDROID_HOME/cmdline-tools
         
         if [ ! -f $ANDROID_HOME/ndk/25.2.9519653/source.properties ]; then
-          echo "📦 Instalando Android SDK y NDK..."
-          
           cd $ANDROID_HOME/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-9477386_latest.zip
@@ -73,11 +68,6 @@ jobs:
             "platform-tools" \
             "ndk;25.2.9519653"
         fi
-        
-        # Configurar enlaces
-        mkdir -p $ANDROID_HOME/tools/bin
-        ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager
-        ln -sf $ANDROID_HOME/ndk/25.2.9519653 $ANDROID_HOME/ndk-bundle
 
     - name: Configure buildozer.spec
       run: |
@@ -85,42 +75,37 @@ jobs:
           buildozer init
         fi
         
-        sed -i 's/^title = .*/title = Calculadora Educativa/' buildozer.spec
+        sed -i 's/^title = .*/title = Calculadora Matemática Pro/' buildozer.spec
         sed -i 's/^package.name = .*/package.name = calculadoramath/' buildozer.spec
         sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,cython/' buildozer.spec
         sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
         sed -i 's/^android.minapi = .*/android.minapi = 21/' buildozer.spec
         sed -i 's/^android.sdk = .*/android.sdk = 33/' buildozer.spec
         sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec
-        sed -i 's/^android.archs = .*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
         sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
-        sed -i '/android.ndk_path =/d' buildozer.spec
-        sed -i '/android.sdk_path =/d' buildozer.spec
 
     - name: Build APK
       run: |
-        # FORZAR USO DE NUESTRO NDK
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         export ANDROID_SDK_ROOT=$ANDROID_HOME
         export ANDROID_NDK=$ANDROID_HOME/ndk/25.2.9519653
         export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653
         export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.2.9519653
-        export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools:$ANDROID_NDK
         
-        yes | buildozer -v android debug 2>&1 | tee build.log
+        # Verificar que main.py existe
+        if [ ! -f main.py ]; then
+          echo "❌ ERROR: No se encuentra main.py"
+          ls -la
+          exit 1
+        fi
+        
+        echo "✅ main.py encontrado, compilando..."
+        buildozer -v android debug 2>&1 | tee build.log
     
     - name: Upload APK
       if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: Calculadora-APK
+        name: Calculadora-Matematica-Pro
         path: bin/*.apk
         retention-days: 30
-    
-    - name: Upload build log on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-log
-        path: build.log
-        retention-days: 7
