@@ -39,22 +39,15 @@ jobs:
 
     - name: Pre-configurar SDK y Licencias
       run: |
-        # Creamos la estructura que buildozer espera para no confundirlo
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         mkdir -p $ANDROID_HOME/cmdline-tools/latest
-        
-        # Descargamos herramientas de linea de comandos
-        cd /tmp
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-        unzip -q commandlinetools-linux-9477386_latest.zip
-        mv cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
-        
-        # Aceptar licencias ANTES de que buildozer falle
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmd.zip
+        unzip -q /tmp/cmd.zip -d /tmp
+        mv /tmp/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
         yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses
-        
-        # Crear enlace simbolico para que buildozer encuentre el sdkmanager donde lo busca siempre
         mkdir -p $ANDROID_HOME/tools/bin
         ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager
+        echo "✅ SDK configurado"
 
     - name: Crear buildozer.spec
       run: |
@@ -86,15 +79,23 @@ EOF
 
     - name: Compilar APK
       run: |
-        # Forzar el uso del SDK que configuramos arriba
         export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
         export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
-        
-        # Ejecutar buildozer
         buildozer -v android debug
-        
+
     - name: Subir APK
       uses: actions/upload-artifact@v4
       with:
         name: calculadora-apk
         path: bin/*.apk
+        if-no-files-found: error
+
+    # PASO EXTRA PARA TU SITIO WEB:
+    # Esto renombra el APK a un nombre fijo para que puedas enlazarlo
+    # desde palmace.github.io/calculadora.apk fácilmente.
+    - name: Preparar para descarga en sitio web
+      if: success()
+      run: |
+        mkdir -p deploy
+        cp bin/*.apk deploy/calculadora.apk
+        echo "APK listo para palmace.github.io"
