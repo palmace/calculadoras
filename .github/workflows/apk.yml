@@ -13,26 +13,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Python 3.11
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-    
-    - name: Cache Android SDK
+
+    - name: Cache Android SDK and Buildozer
       uses: actions/cache@v4
       with:
         path: |
           ~/.buildozer
           ~/.gradle
+          ~/.cache/pip
         key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
           ${{ runner.os }}-buildozer-
-    
+
     - name: Install system dependencies
       run: |
         sudo apt update
@@ -44,26 +45,60 @@ jobs:
     - name: Install buildozer
       run: |
         python3 -m pip install --upgrade pip
-        python3 -m pip install --user buildozer "cython<3.0"
+        python3 -m pip install --user buildozer==1.5.0 "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: 🔧 SOBRESCRIBIR buildozer.spec completamente
+    - name: ✅ Aceptar licencias de Android SDK e instalar build-tools correctas
       run: |
-        echo "📝 Creando buildozer.spec desde cero..."
+        # Definir la ruta del SDK (la misma que usa buildozer)
+        export ANDROID_SDK_ROOT="/home/runner/.buildozer/android/platform/android-sdk"
+        export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
         
-        # Eliminar spec existente
-        rm -f buildozer.spec
+        echo "📦 ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
         
-        # Crear spec NUEVO con valores exactos
+        # Verificar que sdkmanager existe (si no, esperar a que buildozer lo instale)
+        if [ ! -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+          echo "⏳ sdkmanager no encontrado. Ejecutando buildozer para que descargue el SDK primero..."
+          # Ejecutamos buildozer con un target que fuerce la descarga del SDK sin compilar
+          buildozer android p4a -- --help || true
+        fi
+        
+        # Aceptar todas las licencias de una vez
+        if [ -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+          echo "✅ Aceptando licencias del SDK..."
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
+          
+          echo "📦 Instalando build-tools 34.0.0, platform-tools y platform 33..."
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "build-tools;34.0.0" \
+            "platform-tools" \
+            "platforms;android-33"
+          
+          # Verificar que aidl se instaló
+          if [ -f "$ANDROID_SDK_ROOT/build-tools/34.0.0/aidl" ]; then
+            echo "✅ aidl encontrado en build-tools/34.0.0"
+          else
+            echo "❌ ERROR: aidl NO encontrado. Posible problema con la instalación."
+            exit 1
+          fi
+        else
+          echo "⚠️ sdkmanager no disponible. La instalación la hará buildozer más adelante."
+        fi
+
+    - name: 🔧 Crear buildozer.spec definitivo
+      run: |
+        echo "📝 Creando buildozer.spec con configuración probada..."
+        
+        # Sobrescribir completamente el archivo
         cat > buildozer.spec << 'EOF'
 [app]
 title = Calculadora Matemática Pro
 package.name = calculadoramath
 package.domain = org.palmace
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,ttf
 version = 0.1
-requirements = python3,kivy==2.3.0,cython
+requirements = python3,kivy==2.3.0
 orientation = portrait
 osx.python_version = 3
 osx.kivy_version = 2.3.0
@@ -77,64 +112,45 @@ warn_on_root = 1
 [android]
 api = 33
 minapi = 21
-sdk = 33
 ndk = 25b
 archs = arm64-v8a, armeabi-v7a
 accept_sdk_license = True
 build_tools_version = 34.0.0
+android.accept_sdk_license = True
 EOF
         
         echo "✅ buildozer.spec creado:"
         cat buildozer.spec
         echo ""
-        echo "🔍 Verificando que build_tools_version = 34.0.0 esté presente:"
+        echo "🔍 Verificando build_tools_version:"
         grep "build_tools_version" buildozer.spec || echo "⚠️ No encontrado"
 
     - name: 🏗️ Compilar APK
       run: |
         export PATH=$PATH:$HOME/.local/bin
+        export ANDROID_SDK_ROOT="/home/runner/.buildozer/android/platform/android-sdk"
         
         echo "🏗️ INICIANDO COMPILACIÓN (20-40 minutos)..."
-        echo "📋 Versión de build-tools forzada: 34.0.0"
+        echo "📋 Usando build-tools 34.0.0 (forzado en spec)"
         
-        # Mostrar el spec antes de compilar
-        echo "📋 buildozer.spec actual:"
-        cat buildozer.spec
+        # Mostrar versión de buildozer
+        buildozer --version
         
-        # Compilar
+        # Compilar con verbose
         buildozer -v android debug 2>&1 | tee build.log
-    
-    - name: 🔍 Buscar APK
-      id: find-apk
-      run: |
-        echo "🔍 Buscando APK..."
-        find . -name "*.apk" -type f > apk_list.txt
-        find ~/.buildozer -name "*.apk" -type f >> apk_list.txt 2>/dev/null || true
         
-        if [ -s apk_list.txt ]; then
-          echo "✅ APK encontrado:"
-          cat apk_list.txt
-          mkdir -p apk_output
-          while IFS= read -r apk; do
-            cp "$apk" apk_output/ 2>/dev/null || true
-          done < apk_list.txt
-          echo "APK_FOUND=true" >> $GITHUB_ENV
+        # Verificar resultado
+        if [ -f bin/*.apk ]; then
+          echo "✅ APK generado correctamente"
+          ls -la bin/
         else
-          echo "❌ No se encontró APK"
+          echo "❌ ERROR: No se generó el APK"
+          exit 1
         fi
 
-    - name: 📦 Subir APK
-      if: env.APK_FOUND == 'true'
+    - name: 📤 Subir APK como artefacto
       uses: actions/upload-artifact@v4
       with:
-        name: Calculadora-APK
-        path: apk_output/
-        retention-days: 30
-
-    - name: 📋 Subir log
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-log
-        path: build.log
-        retention-days: 7
+        name: calculadora-apk
+        path: bin/*.apk
+        if-no-files-found: error
