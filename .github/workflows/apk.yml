@@ -48,27 +48,26 @@ jobs:
         python3 -m pip install --user buildozer==1.5.0 "cython<3.0"
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: ✅ Aceptar licencias de Android SDK e instalar build-tools correctas
+    - name: Aceptar licencias de Android SDK e instalar build-tools correctas
       run: |
         # Definir la ruta del SDK (la misma que usa buildozer)
         export ANDROID_SDK_ROOT="/home/runner/.buildozer/android/platform/android-sdk"
         export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
         
-        echo "📦 ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+        echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
         
-        # Verificar que sdkmanager existe (si no, esperar a que buildozer lo instale)
+        # Verificar que sdkmanager existe
         if [ ! -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-          echo "⏳ sdkmanager no encontrado. Ejecutando buildozer para que descargue el SDK primero..."
-          # Ejecutamos buildozer con un target que fuerce la descarga del SDK sin compilar
+          echo "sdkmanager no encontrado. Ejecutando buildozer para que descargue el SDK primero..."
           buildozer android p4a -- --help || true
         fi
         
-        # Aceptar todas las licencias de una vez
+        # Aceptar todas las licencias
         if [ -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-          echo "✅ Aceptando licencias del SDK..."
+          echo "Aceptando licencias del SDK..."
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
           
-          echo "📦 Instalando build-tools 34.0.0, platform-tools y platform 33..."
+          echo "Instalando build-tools 34.0.0, platform-tools y platform 33..."
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "build-tools;34.0.0" \
             "platform-tools" \
@@ -76,18 +75,18 @@ jobs:
           
           # Verificar que aidl se instaló
           if [ -f "$ANDROID_SDK_ROOT/build-tools/34.0.0/aidl" ]; then
-            echo "✅ aidl encontrado en build-tools/34.0.0"
+            echo "aidl encontrado en build-tools/34.0.0"
           else
-            echo "❌ ERROR: aidl NO encontrado. Posible problema con la instalación."
+            echo "ERROR: aidl NO encontrado."
             exit 1
           fi
         else
-          echo "⚠️ sdkmanager no disponible. La instalación la hará buildozer más adelante."
+          echo "sdkmanager no disponible. La instalación la hará buildozer más adelante."
         fi
 
-    - name: 🔧 Crear buildozer.spec definitivo
+    - name: Crear buildozer.spec definitivo
       run: |
-        echo "📝 Creando buildozer.spec con configuración probada..."
+        echo "Creando buildozer.spec con configuración probada..."
         
         # Sobrescribir completamente el archivo
         cat > buildozer.spec << 'EOF'
@@ -119,21 +118,21 @@ build_tools_version = 34.0.0
 android.accept_sdk_license = True
 EOF
         
-        echo "✅ buildozer.spec creado:"
+        echo "buildozer.spec creado:"
         cat buildozer.spec
         echo ""
-        echo "🔍 Verificando build_tools_version:"
-        grep "build_tools_version" buildozer.spec || echo "⚠️ No encontrado"
+        echo "Verificando build_tools_version:"
+        grep "build_tools_version" buildozer.spec || echo "No encontrado"
 
-    - name: 🏗️ Compilar APK
+    - name: Compilar APK
       run: |
         export PATH=$PATH:$HOME/.local/bin
         export ANDROID_SDK_ROOT="/home/runner/.buildozer/android/platform/android-sdk"
         
-        echo "🏗️ INICIANDO COMPILACIÓN (20-40 minutos)..."
-        echo "📋 Usando build-tools 34.0.0 (forzado en spec)"
+        echo "INICIANDO COMPILACION (20-40 minutos)..."
+        echo "Usando build-tools 34.0.0 (forzado en spec)"
         
-        # Mostrar versión de buildozer
+        # Mostrar version de buildozer
         buildozer --version
         
         # Compilar con verbose
@@ -141,14 +140,14 @@ EOF
         
         # Verificar resultado
         if [ -f bin/*.apk ]; then
-          echo "✅ APK generado correctamente"
+          echo "APK generado correctamente"
           ls -la bin/
         else
-          echo "❌ ERROR: No se generó el APK"
+          echo "ERROR: No se genero el APK"
           exit 1
         fi
 
-    - name: 📤 Subir APK como artefacto
+    - name: Subir APK como artefacto
       uses: actions/upload-artifact@v4
       with:
         name: calculadora-apk
